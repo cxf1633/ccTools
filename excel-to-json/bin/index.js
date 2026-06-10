@@ -42,14 +42,14 @@ const toolsConfigOutputPath = configPaths.toolsConfigOutputPath
 // 多语言表配置数组，可以轻松添加更多多语言表
 const multiLanguageTables = [
     {
-        name: 'Language',
-        inputPath: configPaths.langInputPath,
-        outputPath: configPaths.langOutputPath
+        name: 'GameI18n',
+        inputPath: configPaths.gameI18nInputPath,
+        outputPath: configPaths.gameI18nOutputPath
     },
     {
-        name: 'Localization',
-        inputPath: configPaths.localizationInputPath,
-        outputPath: configPaths.localizationOutputPath
+        name: 'FrameworkI18n',
+        inputPath: configPaths.frameworkI18nInputPath,
+        outputPath: configPaths.frameworkI18nOutputPath
     }
 ]
 
@@ -109,7 +109,7 @@ const packageJsonData = (sheet, options, customOutputPath = null) => {
 }
 
 function open(result, customOutputPath = null) {
-    const outputPath = customOutputPath || configPaths.langOutputPath
+    const outputPath = customOutputPath || configPaths.gameI18nOutputPath
     
     for (const key in result) {
         if (Object.prototype.hasOwnProperty.call(result, key)) {
@@ -266,10 +266,10 @@ program
             console.log('开始执行Excel转JSON转换...')
             console.log('当前工作目录:', process.cwd())
             console.log('配置路径:')
-            console.log('  langInputPath:', configPaths.langInputPath)
-            console.log('  langOutputPath:', configPaths.langOutputPath)
-            console.log('  localizationInputPath:', configPaths.localizationInputPath)
-            console.log('  localizationOutputPath:', configPaths.localizationOutputPath)
+            console.log('  gameI18nInputPath:', configPaths.gameI18nInputPath)
+            console.log('  gameI18nOutputPath:', configPaths.gameI18nOutputPath)
+            console.log('  frameworkI18nInputPath:', configPaths.frameworkI18nInputPath)
+            console.log('  frameworkI18nOutputPath:', configPaths.frameworkI18nOutputPath)
             console.log('  configInputPath:', configInputPath)
             console.log('  configOutputPath:', configOutputPath)
             console.log('  toolsConfigInputPath:', toolsConfigInputPath)

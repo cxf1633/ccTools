@@ -3,12 +3,12 @@
 # 支持相对路径，相对于项目根目录
 
 # 语言文件输入路径
-langInputPath=excel/Language.xlsx
-localizationInputPath=excel/Localization.xlsx
+gameI18nInputPath=excel/GameI18n.xlsx
+frameworkI18nInputPath=excel/FrameworkI18n.xlsx
 
 # 语言文件输出路径
-langOutputPath=assets/resources/language/json
-localizationOutputPath=assets/framework/language/json
+gameI18nOutputPath=assets/resources/language/json
+frameworkI18nOutputPath=assets/framework/language/json
 
 # 配置文件输入路径（目录，支持批量处理）
 configInputPath=excel/configs
