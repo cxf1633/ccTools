@@ -1,0 +1,25 @@
+# Excel转JSON工具配置文件
+# 格式：key=value
+# 支持相对路径，相对于项目根目录
+
+# 语言文件输入路径
+langInputPath=excel/Language.xlsx
+localizationInputPath=excel/Localization.xlsx
+
+# 语言文件输出路径
+langOutputPath=assets/resources/language/json
+localizationOutputPath=assets/framework/language/json
+
+# 配置文件输入路径（目录，支持批量处理）
+configInputPath=excel/configs
+
+# 配置文件输出路径（目录）
+configOutputPath=assets/resources/configs/
+
+# tools配置文件输入路径（目录，支持批量处理）
+toolsConfigInputPath=tools/excel-to-json/toolsConfigs/
+
+# tools配置文件输出路径（目录）
+toolsConfigOutputPath=assets/resources/toolsConfigs/
+
+
