@@ -67,7 +67,13 @@ const packageJsonData = (sheet, options, sourceName = '') => {
     const columnKey = options.clunmKey || defaultKey
     const foundKeyIndex = firstRow.findIndex(key => key === columnKey)
     const defaultKeyIndex = foundKeyIndex >= 0 ? foundKeyIndex : 0
-    const languages = firstRow.slice(defaultKeyIndex + 1) // depends on key name
+    const languageColumns = firstRow
+        .slice(defaultKeyIndex + 1)
+        .map((language, index) => ({
+            language,
+            columnIndex: defaultKeyIndex + index + 1
+        }))
+        .filter(item => item.language)
     const columnKeyIndex = firstRow.findIndex(item => item === columnKey)
 
     console.log('firstRow', firstRow)
@@ -82,11 +88,10 @@ const packageJsonData = (sheet, options, sourceName = '') => {
 
     for (let i = beginRowNum; i < endRowNum; i++) {
         const row = sheetDataList[i]
-        languages.forEach((language, index) => {
+        languageColumns.forEach(({ language, columnIndex }) => {
             if (row && row.length) {
-                const languageIndex = index + defaultKeyIndex + 1
                 const key = row[columnKeyIndex] || row[defaultKeyIndex]
-                let value = row[languageIndex]
+                let value = row[columnIndex]
                 if (typeof value === 'string') {
                     value = value.replace(/\\n/g, `\n`)
                 }
@@ -135,6 +140,10 @@ function writeLanguageJson(result, outputPath) {
     ensureDirectoryExists(outputPath)
 
     for (const key in result) {
+        if (!key) {
+            continue
+        }
+
         if (Object.prototype.hasOwnProperty.call(result, key)) {
             const element = result[key]
             writeFileSync(
