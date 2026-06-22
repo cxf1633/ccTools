@@ -2,24 +2,19 @@
 # 格式：key=value
 # 支持相对路径，相对于项目根目录
 
-# 语言文件输入路径
-gameI18nInputPath=excel/GameI18n.xlsx
-frameworkI18nInputPath=excel/FrameworkI18n.xlsx
+# 游戏多语言文件输入目录（批量处理该目录下所有xlsx，忽略~$临时文件）
+gameI18nInputDir=excel/language
 
-# 语言文件输出路径
+# 游戏多语言文件输出路径
 gameI18nOutputPath=assets/resources/language/json
-frameworkI18nOutputPath=assets/framework/language/json
+
+# 框架多语言路径由工具固定：
+# 输入：assets/framework/tools/i18n/FrameworkI18n.xlsx
+# 输出：assets/framework/language/json
 
 # 配置文件输入路径（目录，支持批量处理）
 configInputPath=excel/configs
 
 # 配置文件输出路径（目录）
 configOutputPath=assets/resources/configs/
-
-# tools配置文件输入路径（目录，支持批量处理）
-toolsConfigInputPath=tools/excel-to-json/toolsConfigs/
-
-# tools配置文件输出路径（目录）
-toolsConfigOutputPath=assets/resources/toolsConfigs/
-
 

@@ -2,20 +2,22 @@
 const path = require('path')
 const fs = require('fs')
 const xlsx = require('node-xlsx')
-const { writeFileSync, fstatSync, mkdirSync } = require('fs')
+const { writeFileSync, mkdirSync } = require('fs')
 const { Command } = require('commander')
 const program = new Command()
 const { version } = require('../package.json')
+
+// 获取项目根目录（脚本所在目录的上级目录的上级目录的上级目录）
+const projectRoot = path.join(__dirname, '../../../')
+const FRAMEWORK_I18N_INPUT_PATH = path.resolve(projectRoot, 'assets/framework/tools/i18n/FrameworkI18n.xlsx')
+const FRAMEWORK_I18N_OUTPUT_PATH = path.resolve(projectRoot, 'assets/framework/language/json')
 
 // 读取配置文件中的路径
 function loadConfigPaths() {
     const configPath = path.join(__dirname, '../configPaths.txt')
     const configContent = fs.readFileSync(configPath, 'utf8')
     const config = {}
-    
-    // 获取项目根目录（脚本所在目录的上级目录的上级目录的上级目录）
-    const projectRoot = path.join(__dirname, '../../../')
-    
+
     console.log('项目根目录:', projectRoot)
     
     configContent.split('\n').forEach(line => {
@@ -34,46 +36,37 @@ function loadConfigPaths() {
 }
 
 const configPaths = loadConfigPaths()
+const gameI18nInputDir = configPaths.gameI18nInputDir
+const gameI18nOutputPath = configPaths.gameI18nOutputPath
 const configInputPath = configPaths.configInputPath
 const configOutputPath = configPaths.configOutputPath
-const toolsConfigInputPath = configPaths.toolsConfigInputPath
-const toolsConfigOutputPath = configPaths.toolsConfigOutputPath
-
-// 多语言表配置数组，可以轻松添加更多多语言表
-const multiLanguageTables = [
-    {
-        name: 'GameI18n',
-        inputPath: configPaths.gameI18nInputPath,
-        outputPath: configPaths.gameI18nOutputPath
-    },
-    {
-        name: 'FrameworkI18n',
-        inputPath: configPaths.frameworkI18nInputPath,
-        outputPath: configPaths.frameworkI18nOutputPath
-    }
-]
 
 const go = (langPath, outputPath = null) => {
-    const workbook = xlsx.parse(langPath)
-    const sheet = workbook.find(item => item.name === `Sheet1`)
-    if (outputPath) {
-        packageJsonData(sheet, {}, outputPath)
-    } else {
-        packageJsonData(sheet, {})
-    }
+    const jsonData = parseLanguageExcel(langPath)
+    writeLanguageJson(jsonData, outputPath || gameI18nOutputPath)
 }
 
-const packageJsonData = (sheet, options, customOutputPath = null) => {
+const parseLanguageExcel = (langPath) => {
+    const workbook = xlsx.parse(langPath)
+    const sheet = workbook.find(item => item.name === `Sheet1`)
+    if (!sheet) {
+        throw new Error(`语言表缺少Sheet1: ${langPath}`)
+    }
+
+    return packageJsonData(sheet, {}, path.basename(langPath))
+}
+
+const packageJsonData = (sheet, options, sourceName = '') => {
     if (sheet.data.length === 0) {
-        console.log('sheet is empty')
-        return
+        throw new Error(`sheet is empty: ${sourceName}`)
     }
 
     const sheetDataList = sheet.data
     const firstRow = sheetDataList[0]
     const defaultKey = 'key'
     const columnKey = options.clunmKey || defaultKey
-    const defaultKeyIndex = firstRow.findIndex(key => key === columnKey) || 0
+    const foundKeyIndex = firstRow.findIndex(key => key === columnKey)
+    const defaultKeyIndex = foundKeyIndex >= 0 ? foundKeyIndex : 0
     const languages = firstRow.slice(defaultKeyIndex + 1) // depends on key name
     const columnKeyIndex = firstRow.findIndex(item => item === columnKey)
 
@@ -94,23 +87,53 @@ const packageJsonData = (sheet, options, customOutputPath = null) => {
                 const languageIndex = index + defaultKeyIndex + 1
                 const key = row[columnKeyIndex] || row[defaultKeyIndex]
                 let value = row[languageIndex]
-                value = value && value.replace(/\\n/, `\n`)
+                if (typeof value === 'string') {
+                    value = value.replace(/\\n/g, `\n`)
+                }
                 if (!jsonData[language]) {
                     jsonData[language] = {}
                 }
                 if (key) {
+                    if (Object.prototype.hasOwnProperty.call(jsonData[language], key)) {
+                        throw new Error(`重复多语言Key: ${key} (${language}) in ${sourceName}`)
+                    }
                     jsonData[language][key] = value || ''
                 }
             }
         })
     }
-    // console.log('jsonData:', jsonData)
-    open(jsonData, customOutputPath)
+
+    return jsonData
 }
 
-function open(result, customOutputPath = null) {
-    const outputPath = customOutputPath || configPaths.gameI18nOutputPath
-    
+function mergeLanguageJson(target, source, sourceName) {
+    for (const language in source) {
+        if (!Object.prototype.hasOwnProperty.call(source, language)) {
+            continue
+        }
+
+        if (!target[language]) {
+            target[language] = {}
+        }
+
+        const sourceLanguageData = source[language]
+        for (const key in sourceLanguageData) {
+            if (!Object.prototype.hasOwnProperty.call(sourceLanguageData, key)) {
+                continue
+            }
+
+            if (Object.prototype.hasOwnProperty.call(target[language], key)) {
+                throw new Error(`重复多语言Key: ${key} (${language}) in ${sourceName}`)
+            }
+
+            target[language][key] = sourceLanguageData[key]
+        }
+    }
+}
+
+function writeLanguageJson(result, outputPath) {
+    ensureDirectoryExists(outputPath)
+
     for (const key in result) {
         if (Object.prototype.hasOwnProperty.call(result, key)) {
             const element = result[key]
@@ -124,6 +147,50 @@ function open(result, customOutputPath = null) {
     console.log(
         `language excel to json finished, output path is ${outputPath}`
     )
+}
+
+function getExcelFilesFromDir(dirPath) {
+    if (!dirPath || !fs.existsSync(dirPath)) {
+        return []
+    }
+
+    if (!fs.statSync(dirPath).isDirectory()) {
+        return []
+    }
+
+    return fs.readdirSync(dirPath)
+        .filter(file => file.endsWith('.xlsx') && !file.startsWith('~$'))
+        .map(file => path.join(dirPath, file))
+}
+
+function convertGameLanguageTables() {
+    const excelFiles = getExcelFilesFromDir(gameI18nInputDir)
+    if (excelFiles.length === 0) {
+        console.log(`警告: 游戏多语言目录中没有找到Excel文件: ${gameI18nInputDir}`)
+        return
+    }
+
+    const mergedJson = {}
+    excelFiles.forEach(filePath => {
+        console.log(`开始处理游戏多语言表: ${filePath}`)
+        const jsonData = parseLanguageExcel(filePath)
+        mergeLanguageJson(mergedJson, jsonData, path.basename(filePath))
+    })
+
+    writeLanguageJson(mergedJson, gameI18nOutputPath)
+    console.log(`✓ 游戏多语言表转换完成: ${excelFiles.length}个文件 -> ${gameI18nOutputPath}`)
+}
+
+function convertFrameworkLanguageTable() {
+    if (!fs.existsSync(FRAMEWORK_I18N_INPUT_PATH)) {
+        console.log(`警告: 框架多语言表文件不存在: ${FRAMEWORK_I18N_INPUT_PATH}`)
+        return
+    }
+
+    console.log(`开始处理框架多语言表: ${FRAMEWORK_I18N_INPUT_PATH}`)
+    const jsonData = parseLanguageExcel(FRAMEWORK_I18N_INPUT_PATH)
+    writeLanguageJson(jsonData, FRAMEWORK_I18N_OUTPUT_PATH)
+    console.log(`✓ 框架多语言表转换完成: ${path.basename(FRAMEWORK_I18N_INPUT_PATH)} -> ${FRAMEWORK_I18N_OUTPUT_PATH}`)
 }
 
 function parseExcelToJson(filePath) {
@@ -266,33 +333,17 @@ program
             console.log('开始执行Excel转JSON转换...')
             console.log('当前工作目录:', process.cwd())
             console.log('配置路径:')
-            console.log('  gameI18nInputPath:', configPaths.gameI18nInputPath)
-            console.log('  gameI18nOutputPath:', configPaths.gameI18nOutputPath)
-            console.log('  frameworkI18nInputPath:', configPaths.frameworkI18nInputPath)
-            console.log('  frameworkI18nOutputPath:', configPaths.frameworkI18nOutputPath)
+            console.log('  gameI18nInputDir:', gameI18nInputDir)
+            console.log('  gameI18nOutputPath:', gameI18nOutputPath)
+            console.log('  FRAMEWORK_I18N_INPUT_PATH:', FRAMEWORK_I18N_INPUT_PATH)
+            console.log('  FRAMEWORK_I18N_OUTPUT_PATH:', FRAMEWORK_I18N_OUTPUT_PATH)
             console.log('  configInputPath:', configInputPath)
             console.log('  configOutputPath:', configOutputPath)
-            console.log('  toolsConfigInputPath:', toolsConfigInputPath)
-            console.log('  toolsConfigOutputPath:', toolsConfigOutputPath)
             
             // 处理多语言表
             console.log('开始处理多语言表...')
-            multiLanguageTables.forEach(table => {
-                if (fs.existsSync(table.inputPath)) {
-                    console.log(`开始处理${table.name}表: ${table.inputPath}`)
-                    try {
-                        // 确保输出目录存在
-                        ensureDirectoryExists(table.outputPath)
-                        // 使用go函数处理多语言表，指定输出路径
-                        go(table.inputPath, table.outputPath)
-                        console.log(`✓ ${table.name}表转换完成: ${path.basename(table.inputPath)} -> ${table.outputPath}`)
-                    } catch (error) {
-                        console.error(`✗ ${table.name}表转换失败:`, error.message)
-                    }
-                } else {
-                    console.log(`警告: ${table.name}表文件不存在: ${table.inputPath}`)
-                }
-            })
+            convertGameLanguageTables()
+            convertFrameworkLanguageTable()
             console.log('多语言表处理完成')
 
             
@@ -332,41 +383,6 @@ program
                 }
             }
 
-            // 批量处理toolsConfigInputPath目录下的所有Excel文件
-            if (fs.existsSync(toolsConfigInputPath)) {
-                if (fs.statSync(toolsConfigInputPath).isDirectory()) {
-                    // 如果是目录，批量处理所有xlsx文件
-                    const files = fs.readdirSync(toolsConfigInputPath)
-                    const excelFiles = files.filter(file => file.endsWith('.xlsx'))
-                    
-                    if (excelFiles.length === 0) {
-                        console.log(`目录 ${toolsConfigInputPath} 中没有找到Excel文件`)
-                    } else {
-                        console.log(`找到 ${excelFiles.length} 个Excel文件，开始批量转换...`)
-                        
-                        excelFiles.forEach(file => {
-                            const inputFile = path.join(toolsConfigInputPath, file)
-                            const outputFile = path.join(toolsConfigOutputPath, file.replace('.xlsx', '.json'))
-                            
-                            try {
-                                const jsonData = parseExcelToJson(inputFile)
-                                // 确保输出目录存在
-                                const outputDir = path.dirname(outputFile)
-                                ensureDirectoryExists(outputDir)
-                                // 将结果写入JSON文件
-                                writeFileSync(outputFile, JSON.stringify(jsonData, null, 4))
-                                console.log(`✓ 转换完成: ${file} -> ${path.basename(outputFile)}`)
-                            } catch (error) {
-                                console.error(`✗ 转换失败: ${file}`, error.message)
-                            }
-                        })
-                        
-                        console.log(`批量转换完成，输出目录: ${toolsConfigOutputPath}`)
-                    }
-                } else {
-                    console.log(`警告: ${toolsConfigInputPath} 不是目录，跳过处理`)
-                }
-            }
         } catch (error) {
             console.error('执行过程中发生错误:', error)
             process.exit(1)
