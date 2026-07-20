@@ -63,12 +63,16 @@ $env:COCOS_CREATOR_EXE = 'D:\Cocos\Creator\3.8.8\CocosCreator.exe'
 
 执行脚本前应先保存项目并关闭所有 Cocos Creator 窗口。Creator 使用单实例进程；如果编辑器主进程已经打开，它可能接收命令行参数，但不会把构建退出码返回给调用脚本。脚本只拦截 Creator 主进程，会忽略关闭编辑器后可能残留的 `renderer`、`gpu-process`、`crashpad-handler` 等 Electron 子进程。
 
-脚本根据项目 `tool-config.json` 中的 `bundleGroups` 和 `forbiddenBundleDependencies` 执行两层检查：
+Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需要在 `PATH` 中提供 `node.exe`。Node.js 直接以 UTF-8 输出中文，并通过退出码通知 PowerShell 停止流程，不会附带 PowerShell 异常调用栈。
+
+检查器根据项目 `tool-config.json` 中的 `bundleGroups` 和 `forbiddenBundleDependencies` 执行两层检查：
 
 1. 启动 Creator 前扫描源码中的资源 UUID 引用，阻止 Prefab、Scene、Animation、Material 等资源跨越禁止的 Bundle 分组边界。该检查不受 Bundle 优先级影响，因此同优先级 Bundle 复制共享资源时也能发现原始违规引用。
 2. Cocos 构建成功后读取各 Bundle 的 `config*.json`，继续检查最终生成的 `deps`。
 
-源码检查会从目录 `.meta` 的 `userData.isBundle` 和 `userData.bundleName` 自动发现 Bundle 根目录，并建立主资源及 SpriteFrame 等子资源的 UUID 索引。报错信息包含来源文件、行号、目标资源、UUID 和命中的规则。
+源码检查会从目录 `.meta` 的 `userData.isBundle` 和 `userData.bundleName` 自动发现 Bundle 根目录，并建立主资源及 SpriteFrame 等子资源的 UUID 索引。报错信息包含来源文件、行号、目标资源和命中的规则。
+
+同一来源文件中的违规引用会按来源 Bundle 和目标 Bundle 合并显示。
 
 规则通过 `fromGroup` 指定来源分组，通过 `toGroup` 或 `toGroups` 指定禁止依赖的目标分组；目标 `*` 表示禁止依赖任何分组。`unknownBundlePolicy` 为 `error` 时，源码或构建产物中未登记到任何分组的 Bundle 也会导致检查失败。共享工具本身不保存任何项目 Bundle 名称。
 
