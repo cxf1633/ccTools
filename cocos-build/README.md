@@ -12,11 +12,35 @@ Creator 可执行文件路径由项目主仓库的 `cocos-build/tool-config.json
 {
   "creatorExe": "C:\\ProgramData\\cocos\\editors\\Creator\\3.8.8\\CocosCreator.exe",
   "creatorVersion": "3.8.8",
-  "forbiddenBundleDependencies": {
-    "hall": ["login", "texasHoldem"],
-    "login": ["hall", "texasHoldem"],
-    "texasHoldem": ["hall", "login"]
-  }
+  "bundleGroups": {
+    "base": ["internal", "resources"],
+    "shared": ["components", "language"],
+    "entry": ["main"],
+    "feature": ["login", "hall", "texasHoldem"]
+  },
+  "forbiddenBundleDependencies": [
+    {
+      "name": "base-must-not-depend-on-other-bundles",
+      "fromGroup": "base",
+      "toGroup": "*"
+    },
+    {
+      "name": "shared-must-not-depend-on-entry-or-feature",
+      "fromGroup": "shared",
+      "toGroups": ["entry", "feature"]
+    },
+    {
+      "name": "entry-must-not-depend-on-feature",
+      "fromGroup": "entry",
+      "toGroup": "feature"
+    },
+    {
+      "name": "feature-must-not-depend-on-entry-or-feature",
+      "fromGroup": "feature",
+      "toGroups": ["entry", "feature"]
+    }
+  ],
+  "unknownBundlePolicy": "error"
 }
 ```
 
@@ -39,7 +63,16 @@ $env:COCOS_CREATOR_EXE = 'D:\Cocos\Creator\3.8.8\CocosCreator.exe'
 
 执行脚本前应先保存项目并关闭所有 Cocos Creator 窗口。Creator 使用单实例进程；如果编辑器主进程已经打开，它可能接收命令行参数，但不会把构建退出码返回给调用脚本。脚本只拦截 Creator 主进程，会忽略关闭编辑器后可能残留的 `renderer`、`gpu-process`、`crashpad-handler` 等 Electron 子进程。
 
-Cocos 构建成功后，脚本根据项目 `tool-config.json` 中的 `forbiddenBundleDependencies` 检查业务 Bundle 依赖。共享工具本身不保存任何项目 Bundle 名称。调查现有依赖问题期间，如需临时跳过检查并产出构建包，可执行：
+脚本根据项目 `tool-config.json` 中的 `bundleGroups` 和 `forbiddenBundleDependencies` 执行两层检查：
+
+1. 启动 Creator 前扫描源码中的资源 UUID 引用，阻止 Prefab、Scene、Animation、Material 等资源跨越禁止的 Bundle 分组边界。该检查不受 Bundle 优先级影响，因此同优先级 Bundle 复制共享资源时也能发现原始违规引用。
+2. Cocos 构建成功后读取各 Bundle 的 `config*.json`，继续检查最终生成的 `deps`。
+
+源码检查会从目录 `.meta` 的 `userData.isBundle` 和 `userData.bundleName` 自动发现 Bundle 根目录，并建立主资源及 SpriteFrame 等子资源的 UUID 索引。报错信息包含来源文件、行号、目标资源、UUID 和命中的规则。
+
+规则通过 `fromGroup` 指定来源分组，通过 `toGroup` 或 `toGroups` 指定禁止依赖的目标分组；目标 `*` 表示禁止依赖任何分组。`unknownBundlePolicy` 为 `error` 时，源码或构建产物中未登记到任何分组的 Bundle 也会导致检查失败。共享工具本身不保存任何项目 Bundle 名称。
+
+调查现有依赖问题期间，如需临时跳过源码 UUID 和构建产物 `deps` 两层检查并产出构建包，可执行：
 
 ```powershell
 .\cocos-build\build-web-mobile.bat -SkipBundleDependencyCheck
