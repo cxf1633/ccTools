@@ -183,6 +183,136 @@ function projectRelative(projectRoot, filePath) {
     return path.relative(projectRoot, filePath) || '.';
 }
 
+function getNodePath(serializedObjects, nodeIndex) {
+    const names = [];
+    const visited = new Set();
+    let currentIndex = nodeIndex;
+
+    while (Number.isInteger(currentIndex) && !visited.has(currentIndex)) {
+        visited.add(currentIndex);
+        const node = serializedObjects[currentIndex];
+        if (!node || typeof node !== 'object') {
+            break;
+        }
+
+        names.unshift(String(node._name || `<Node ${currentIndex}>`));
+        currentIndex = node._parent && Number.isInteger(node._parent.__id__)
+            ? node._parent.__id__
+            : null;
+    }
+
+    return names.join('/');
+}
+
+function collectUuidValues(value, output) {
+    if (!value || typeof value !== 'object') {
+        return;
+    }
+    if (typeof value.__uuid__ === 'string') {
+        output.push(value.__uuid__);
+    }
+
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            collectUuidValues(item, output);
+        }
+        return;
+    }
+
+    for (const child of Object.values(value)) {
+        collectUuidValues(child, output);
+    }
+}
+
+function collectSerializedUuidReferences(sourcePath) {
+    const sourceText = fs.readFileSync(sourcePath, 'utf8').replace(/^\uFEFF/, '');
+    let serialized;
+    try {
+        serialized = JSON.parse(sourceText);
+    } catch (_error) {
+        const references = [];
+        const referencePattern = /"__uuid__"\s*:\s*"([^"]+)"/g;
+        let referenceMatch;
+        while ((referenceMatch = referencePattern.exec(sourceText)) !== null) {
+            references.push({ uuid: referenceMatch[1], controlPath: '<无法解析控件>' });
+        }
+        return references;
+    }
+
+    if (!Array.isArray(serialized)) {
+        const uuids = [];
+        collectUuidValues(serialized, uuids);
+        return uuids.map((uuid) => ({ uuid, controlPath: '<资源文件本身>' }));
+    }
+
+    const ownerNodeByObject = new Map();
+    for (let index = 0; index < serialized.length; index += 1) {
+        const object = serialized[index];
+        if (!object || typeof object !== 'object') {
+            continue;
+        }
+
+        if (object.__type__ === 'cc.Node') {
+            ownerNodeByObject.set(index, index);
+        }
+
+        const directNodeId = object.node && Number.isInteger(object.node.__id__)
+            ? object.node.__id__
+            : object._node && Number.isInteger(object._node.__id__)
+                ? object._node.__id__
+                : null;
+        if (directNodeId !== null) {
+            ownerNodeByObject.set(index, directNodeId);
+        }
+    }
+
+    for (let nodeIndex = 0; nodeIndex < serialized.length; nodeIndex += 1) {
+        const node = serialized[nodeIndex];
+        if (!node || node.__type__ !== 'cc.Node') {
+            continue;
+        }
+
+        for (const componentReference of Array.isArray(node._components) ? node._components : []) {
+            if (componentReference && Number.isInteger(componentReference.__id__)) {
+                ownerNodeByObject.set(componentReference.__id__, nodeIndex);
+            }
+        }
+        if (node._prefab && Number.isInteger(node._prefab.__id__)) {
+            ownerNodeByObject.set(node._prefab.__id__, nodeIndex);
+        }
+    }
+
+    for (let index = 0; index < serialized.length; index += 1) {
+        const object = serialized[index];
+        const ownerNodeId = ownerNodeByObject.get(index);
+        if (ownerNodeId === undefined || !object || typeof object !== 'object') {
+            continue;
+        }
+        if (object.__prefab && Number.isInteger(object.__prefab.__id__)) {
+            ownerNodeByObject.set(object.__prefab.__id__, ownerNodeId);
+        }
+    }
+
+    const references = [];
+    for (let index = 0; index < serialized.length; index += 1) {
+        const uuids = [];
+        collectUuidValues(serialized[index], uuids);
+        if (uuids.length === 0) {
+            continue;
+        }
+
+        const ownerNodeId = ownerNodeByObject.get(index);
+        const controlPath = ownerNodeId === undefined
+            ? '<未关联到节点>'
+            : getNodePath(serialized, ownerNodeId);
+        for (const uuid of uuids) {
+            references.push({ uuid, controlPath });
+        }
+    }
+
+    return references;
+}
+
 function checkSource(projectRoot, policy) {
     const assetsPath = path.join(projectRoot, 'assets');
     const allFiles = walkFiles(assetsPath);
@@ -216,42 +346,36 @@ function checkSource(projectRoot, policy) {
             continue;
         }
 
-        const lines = fs.readFileSync(sourcePath, 'utf8').split(/\r?\n/);
-        for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-            const referencePattern = /"__uuid__"\s*:\s*"([^"]+)"/g;
-            let referenceMatch;
-            while ((referenceMatch = referencePattern.exec(lines[lineIndex])) !== null) {
-                const uuid = referenceMatch[1];
-                const target = uuidIndex.get(uuid);
-                if (!target || target.bundle === sourceBundle) {
-                    continue;
-                }
+        for (const reference of collectSerializedUuidReferences(sourcePath)) {
+            const target = uuidIndex.get(reference.uuid);
+            if (!target || target.bundle === sourceBundle) {
+                continue;
+            }
 
-                const rule = findForbiddenRule(policy, sourceBundle, target.bundle);
-                if (!rule) {
-                    continue;
-                }
+            const rule = findForbiddenRule(policy, sourceBundle, target.bundle);
+            if (!rule) {
+                continue;
+            }
 
-                const key = [sourceBundle, target.bundle, sourcePath, target.asset, rule.name].join('|');
-                if (!violationByKey.has(key)) {
-                    violationByKey.set(key, {
-                        sourceBundle,
-                        sourceGroup: policy.bundleToGroup.get(sourceBundle),
-                        sourcePath,
-                        line: lineIndex + 1,
-                        targetBundle: target.bundle,
-                        targetGroup: policy.bundleToGroup.get(target.bundle),
-                        targetAsset: target.asset,
-                        rule: rule.name,
-                    });
-                }
+            const key = [sourceBundle, target.bundle, sourcePath, reference.controlPath, target.asset, rule.name].join('|');
+            if (!violationByKey.has(key)) {
+                violationByKey.set(key, {
+                    sourceBundle,
+                    sourceGroup: policy.bundleToGroup.get(sourceBundle),
+                    sourcePath,
+                    controlPath: reference.controlPath,
+                    targetBundle: target.bundle,
+                    targetGroup: policy.bundleToGroup.get(target.bundle),
+                    targetAsset: target.asset,
+                    rule: rule.name,
+                });
             }
         }
     }
 
     const violations = Array.from(violationByKey.values()).sort((left, right) => (
         left.sourcePath.localeCompare(right.sourcePath)
-        || left.line - right.line
+        || left.controlPath.localeCompare(right.controlPath)
         || left.targetAsset.localeCompare(right.targetAsset)
     ));
 
@@ -280,8 +404,8 @@ function checkSource(projectRoot, policy) {
         console.error(`引用 Bundle：${first.targetBundle}（${first.targetGroup}）`);
         console.error(`来源文件：${projectRelative(projectRoot, first.sourcePath)}`);
         console.error(`违规资源：${items.length} 个`);
-        for (const item of items.sort((left, right) => left.line - right.line)) {
-            console.error(`  第 ${item.line} 行 -> ${projectRelative(projectRoot, item.targetAsset)}`);
+        for (const item of items.sort((left, right) => left.controlPath.localeCompare(right.controlPath))) {
+            console.error(`  控件 ${item.controlPath} -> ${projectRelative(projectRoot, item.targetAsset)}`);
         }
         console.error(`命中规则：${first.rule}`);
     }

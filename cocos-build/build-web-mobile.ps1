@@ -105,11 +105,6 @@ if ($creatorVersion -ne $requiredCreatorVersion) {
     throw "Cocos Creator $requiredCreatorVersion is required, but '$creatorVersion' was found at: $CreatorExe"
 }
 
-$runningCreatorProcesses = @(Get-RunningCreatorMainProcesses)
-if ($runningCreatorProcesses.Count -gt 0) {
-    throw 'Cocos Creator is already running. Save the project and close all Creator windows before starting a command-line build.'
-}
-
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
 $buildOptions = "configPath=$configPath;logDest=$logPath"
 
@@ -138,6 +133,11 @@ else {
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
+}
+
+$runningCreatorProcesses = @(Get-RunningCreatorMainProcesses)
+if ($runningCreatorProcesses.Count -gt 0) {
+    throw 'Cocos Creator is already running. Save the project and close all Creator windows before starting a command-line build.'
 }
 
 $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE

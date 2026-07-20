@@ -70,7 +70,7 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 1. 启动 Creator 前扫描源码中的资源 UUID 引用，阻止 Prefab、Scene、Animation、Material 等资源跨越禁止的 Bundle 分组边界。该检查不受 Bundle 优先级影响，因此同优先级 Bundle 复制共享资源时也能发现原始违规引用。
 2. Cocos 构建成功后读取各 Bundle 的 `config*.json`，继续检查最终生成的 `deps`。
 
-源码检查会从目录 `.meta` 的 `userData.isBundle` 和 `userData.bundleName` 自动发现 Bundle 根目录，并建立主资源及 SpriteFrame 等子资源的 UUID 索引。报错信息包含来源文件、行号、目标资源和命中的规则。
+源码检查会从目录 `.meta` 的 `userData.isBundle` 和 `userData.bundleName` 自动发现 Bundle 根目录，并建立主资源及 SpriteFrame 等子资源的 UUID 索引。对于 Prefab 等 Cocos 序列化资源，检查器会通过组件的 `node.__id__` 解析完整控件路径；报错信息包含来源文件、控件路径、目标资源和命中的规则。
 
 同一来源文件中的违规引用会按来源 Bundle 和目标 Bundle 合并显示。
 
