@@ -82,6 +82,7 @@ $logDirectory = Join-Path $projectRoot 'temp\builder\log'
 $logPath = Join-Path $logDirectory "$outputName-cli.log"
 $dependencyCheckerPath = Join-Path $PSScriptRoot 'check-bundle-dependencies.js'
 
+# 优先级：命令行参数 > 环境变量 > tool config
 if ([string]::IsNullOrWhiteSpace($CreatorExe)) {
     $CreatorExe = $env:COCOS_CREATOR_EXE
 }
@@ -89,7 +90,7 @@ if ([string]::IsNullOrWhiteSpace($CreatorExe)) {
     $CreatorExe = [string]$toolConfig.creatorExe
 }
 if ([string]::IsNullOrWhiteSpace($CreatorExe)) {
-    throw "Cocos Creator executable is not configured. Set creatorExe in: $toolConfigPath"
+    throw "Cocos Creator executable is not configured. Set creatorExe in: $toolConfigPath, or set the COCOS_CREATOR_EXE environment variable."
 }
 if (-not (Test-Path -LiteralPath $CreatorExe -PathType Leaf)) {
     throw "Cocos Creator executable was not found: $CreatorExe. Update creatorExe in: $toolConfigPath"

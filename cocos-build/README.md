@@ -6,11 +6,10 @@
 .\cocos-build\build-web-mobile.bat
 ```
 
-Creator 可执行文件路径由项目主仓库的 `cocos-build/tool-config.json` 配置，例如：
+构建规则由项目主仓库的 `cocos-build/tool-config.json` 配置，例如：
 
 ```json
 {
-  "creatorExe": "C:\\ProgramData\\cocos\\editors\\Creator\\3.8.8\\CocosCreator.exe",
   "creatorVersion": "3.8.8",
   "bundleGroups": {
     "base": ["internal", "resources"],
@@ -20,22 +19,22 @@ Creator 可执行文件路径由项目主仓库的 `cocos-build/tool-config.json
   },
   "forbiddenBundleDependencies": [
     {
-      "name": "base-must-not-depend-on-other-bundles",
+      "name": "base 组的 internal、resources 不可依赖任何其他 bundle",
       "fromGroup": "base",
       "toGroup": "*"
     },
     {
-      "name": "shared-must-not-depend-on-entry-or-feature",
+      "name": "shared 组的 components、language 不可依赖 entry 和 feature",
       "fromGroup": "shared",
       "toGroups": ["entry", "feature"]
     },
     {
-      "name": "entry-must-not-depend-on-feature",
+      "name": "entry 组的 main 不可依赖 feature",
       "fromGroup": "entry",
       "toGroup": "feature"
     },
     {
-      "name": "feature-must-not-depend-on-entry-or-feature",
+      "name": "feature 组的 login、hall、texasHoldem 不可依赖 entry，也不可互相依赖",
       "fromGroup": "feature",
       "toGroups": ["entry", "feature"]
     }
@@ -44,7 +43,7 @@ Creator 可执行文件路径由项目主仓库的 `cocos-build/tool-config.json
 }
 ```
 
-共享工具本身不保存项目或机器的 Creator 安装路径。不同项目可以维护各自的 `tool-config.json`。
+共享工具本身不保存任何项目或机器的配置，`creatorExe`、`creatorVersion` 和 Bundle 分组都由各项目的 `tool-config.json` 提供。
 
 如需临时覆盖配置文件，可通过通用环境变量指定：
 
@@ -74,7 +73,7 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 
 同一来源文件中的违规引用会按来源 Bundle 和目标 Bundle 合并显示。
 
-规则通过 `fromGroup` 指定来源分组，通过 `toGroup` 或 `toGroups` 指定禁止依赖的目标分组；目标 `*` 表示禁止依赖任何分组。`unknownBundlePolicy` 为 `error` 时，源码或构建产物中未登记到任何分组的 Bundle 也会导致检查失败。共享工具本身不保存任何项目 Bundle 名称。
+规则通过 `fromGroup` 指定来源分组，通过 `toGroup` 或 `toGroups` 指定禁止依赖的目标分组；目标 `*` 表示禁止依赖任何分组。`name` 只用于报错显示和违规去重，不参与匹配判断，不能为空，可直接写成中文说明。`unknownBundlePolicy` 为 `error` 时，源码或构建产物中未登记到任何分组的 Bundle 也会导致检查失败。共享工具本身不保存任何项目 Bundle 名称。
 
 调查现有依赖问题期间，如需临时跳过源码 UUID 和构建产物 `deps` 两层检查并产出构建包，可执行：
 
@@ -83,3 +82,5 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 ```
 
 项目构建配置由主仓库的 `cocos-build/web-mobile.json` 维护。构建面板选项或参与构建的场景发生变化时，应明确更新该文件，不要直接使用编辑器生成的 `profiles/v2/packages/builder.json` 作为命令行配置。
+
+各配置文件的逐字段说明见主仓库的 `cocos-build/README.md`。
