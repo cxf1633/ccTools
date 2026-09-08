@@ -14,6 +14,12 @@ const SERIALIZED_ASSET_EXTENSIONS = new Set([
     '.spriteatlas',
 ]);
 
+const LANGUAGE_DEFAULT_ASSET_EXTENSIONS = new Set(['.prefab', '.scene']);
+const LANGUAGE_COMPONENT_TYPES = new Map([
+    ['04444SP5AFPd43ijqwWoFt2', 'LanguageSprite'],
+    ['4e7e0XHDXpC9pDHNCN407j7', 'LanguageSpine'],
+]);
+
 function parseArguments(argv) {
     const args = {};
     for (let index = 0; index < argv.length; index += 2) {
@@ -115,7 +121,12 @@ function createPolicy(toolConfig) {
         throw new Error(`不支持 unknownBundlePolicy=${unknownBundlePolicy}，只能使用 error 或 ignore。`);
     }
 
-    return { bundleToGroup, rules, unknownBundlePolicy };
+    const defaultLanguageBundle = String(toolConfig.defaultLanguageBundle || '').trim();
+    if (defaultLanguageBundle && !bundleToGroup.has(defaultLanguageBundle)) {
+        throw new Error(`默认多语言 Bundle 未登记到 bundleGroups：${defaultLanguageBundle}`);
+    }
+
+    return { bundleToGroup, rules, unknownBundlePolicy, defaultLanguageBundle };
 }
 
 function findForbiddenRule(policy, fromBundle, toBundle) {
@@ -224,12 +235,18 @@ function collectUuidValues(value, output) {
     }
 }
 
-function collectSerializedUuidReferences(sourcePath) {
+function parseSerializedSource(sourcePath) {
     const sourceText = fs.readFileSync(sourcePath, 'utf8').replace(/^\uFEFF/, '');
-    let serialized;
     try {
-        serialized = JSON.parse(sourceText);
+        return { sourceText, serialized: JSON.parse(sourceText) };
     } catch (_error) {
+        return { sourceText, serialized: null };
+    }
+}
+
+function collectSerializedUuidReferences(sourcePath, parsedSource) {
+    const { sourceText, serialized } = parsedSource || parseSerializedSource(sourcePath);
+    if (serialized === null) {
         const references = [];
         const referencePattern = /"__uuid__"\s*:\s*"([^"]+)"/g;
         let referenceMatch;
@@ -313,6 +330,85 @@ function collectSerializedUuidReferences(sourcePath) {
     return references;
 }
 
+function collectLanguageDefaultAssetViolations(sourcePath, parsedSource, uuidIndex, defaultLanguageBundle) {
+    if (!defaultLanguageBundle || !Array.isArray(parsedSource.serialized)) {
+        return [];
+    }
+
+    const serialized = parsedSource.serialized;
+    const componentIndexesByNode = new Map();
+    for (let index = 0; index < serialized.length; index += 1) {
+        const object = serialized[index];
+        if (!object || typeof object !== 'object') {
+            continue;
+        }
+
+        const nodeIndex = object.node && Number.isInteger(object.node.__id__)
+            ? object.node.__id__
+            : object._node && Number.isInteger(object._node.__id__)
+                ? object._node.__id__
+                : null;
+        if (nodeIndex === null) {
+            continue;
+        }
+        if (!componentIndexesByNode.has(nodeIndex)) {
+            componentIndexesByNode.set(nodeIndex, []);
+        }
+        componentIndexesByNode.get(nodeIndex).push(index);
+    }
+
+    const violations = [];
+    for (let index = 0; index < serialized.length; index += 1) {
+        const component = serialized[index];
+        const componentName = component && LANGUAGE_COMPONENT_TYPES.get(component.__type__);
+        if (!componentName) {
+            continue;
+        }
+
+        const nodeIndex = component.node && Number.isInteger(component.node.__id__)
+            ? component.node.__id__
+            : component._node && Number.isInteger(component._node.__id__)
+                ? component._node.__id__
+                : null;
+        if (nodeIndex === null) {
+            continue;
+        }
+
+        const componentIndexes = componentIndexesByNode.get(nodeIndex) || [];
+        const resourceComponent = componentIndexes
+            .map((componentIndex) => serialized[componentIndex])
+            .find((item) => componentName === 'LanguageSprite'
+                ? item && item.__type__ === 'cc.Sprite'
+                : item && item.__type__ === 'sp.Skeleton');
+        const resourceReference = componentName === 'LanguageSprite'
+            ? resourceComponent && resourceComponent._spriteFrame
+            : resourceComponent && (resourceComponent._skeletonData || resourceComponent.skeletonData);
+        const resourceUuid = resourceReference && typeof resourceReference.__uuid__ === 'string'
+            ? resourceReference.__uuid__
+            : '';
+        if (!resourceUuid) {
+            continue;
+        }
+
+        const target = uuidIndex.get(resourceUuid);
+        if (target && target.bundle === defaultLanguageBundle) {
+            continue;
+        }
+
+        violations.push({
+            sourcePath,
+            controlPath: getNodePath(serialized, nodeIndex),
+            component: componentName,
+            dataID: String(component._dataID || ''),
+            resourceUuid,
+            targetAsset: target ? target.asset : null,
+            targetBundle: target ? target.bundle : null,
+        });
+    }
+
+    return violations;
+}
+
 function checkSource(projectRoot, policy) {
     const assetsPath = path.join(projectRoot, 'assets');
     const allFiles = walkFiles(assetsPath);
@@ -340,13 +436,24 @@ function checkSource(projectRoot, policy) {
     }
 
     const violationByKey = new Map();
+    const languageDefaultViolations = [];
     for (const sourcePath of allFiles.filter((filePath) => SERIALIZED_ASSET_EXTENSIONS.has(path.extname(filePath).toLowerCase()))) {
+        const parsedSource = parseSerializedSource(sourcePath);
+        if (LANGUAGE_DEFAULT_ASSET_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) {
+            languageDefaultViolations.push(...collectLanguageDefaultAssetViolations(
+                sourcePath,
+                parsedSource,
+                uuidIndex,
+                policy.defaultLanguageBundle,
+            ));
+        }
+
         const sourceBundle = getOwningBundle(sourcePath, bundleRoots);
         if (!sourceBundle) {
             continue;
         }
 
-        for (const reference of collectSerializedUuidReferences(sourcePath)) {
+        for (const reference of collectSerializedUuidReferences(sourcePath, parsedSource)) {
             const target = uuidIndex.get(reference.uuid);
             if (!target || target.bundle === sourceBundle) {
                 continue;
@@ -379,41 +486,77 @@ function checkSource(projectRoot, policy) {
         || left.targetAsset.localeCompare(right.targetAsset)
     ));
 
+    languageDefaultViolations.sort((left, right) => (
+        left.sourcePath.localeCompare(right.sourcePath)
+        || left.controlPath.localeCompare(right.controlPath)
+        || left.component.localeCompare(right.component)
+    ));
+
     if (violations.length === 0) {
         console.log(`源码 Bundle UUID 检查通过：扫描 ${bundleRoots.length} 个 Bundle，建立 ${uuidIndex.size} 个 UUID 索引。`);
-        return true;
-    }
-
-    const grouped = new Map();
-    for (const violation of violations) {
-        const key = [violation.sourceBundle, violation.targetBundle, violation.sourcePath, violation.rule].join('|');
-        if (!grouped.has(key)) {
-            grouped.set(key, []);
+    } else {
+        const grouped = new Map();
+        for (const violation of violations) {
+            const key = [violation.sourceBundle, violation.targetBundle, violation.sourcePath, violation.rule].join('|');
+            if (!grouped.has(key)) {
+                grouped.set(key, []);
+            }
+            grouped.get(key).push(violation);
         }
-        grouped.get(key).push(violation);
-    }
 
-    console.error('');
-    console.error('【源码 Bundle 资源依赖检查失败】');
-    console.error('原因：业务 Bundle 之间禁止直接引用资源。');
-
-    for (const items of grouped.values()) {
-        const first = items[0];
         console.error('');
-        console.error(`来源 Bundle：${first.sourceBundle}（${first.sourceGroup}）`);
-        console.error(`引用 Bundle：${first.targetBundle}（${first.targetGroup}）`);
-        console.error(`来源文件：${projectRelative(projectRoot, first.sourcePath)}`);
-        console.error(`违规资源：${items.length} 个`);
-        for (const item of items.sort((left, right) => left.controlPath.localeCompare(right.controlPath))) {
-            console.error(`  控件 ${item.controlPath} -> ${projectRelative(projectRoot, item.targetAsset)}`);
+        console.error('【源码 Bundle 资源依赖检查失败】');
+        console.error('原因：业务 Bundle 之间禁止直接引用资源。');
+
+        for (const items of grouped.values()) {
+            const first = items[0];
+            console.error('');
+            console.error(`来源 Bundle：${first.sourceBundle}（${first.sourceGroup}）`);
+            console.error(`引用 Bundle：${first.targetBundle}（${first.targetGroup}）`);
+            console.error(`来源文件：${projectRelative(projectRoot, first.sourcePath)}`);
+            console.error(`违规资源：${items.length} 个`);
+            for (const item of items.sort((left, right) => left.controlPath.localeCompare(right.controlPath))) {
+                console.error(`  控件 ${item.controlPath} -> ${projectRelative(projectRoot, item.targetAsset)}`);
+            }
+            console.error(`命中规则：${first.rule}`);
         }
-        console.error(`命中规则：${first.rule}`);
+
+        console.error('');
+        console.error('处理建议：将这些资源移动到允许依赖的公共 Bundle，或者让来源 Prefab 使用自己 Bundle 内的资源。');
     }
 
-    console.error('');
-    console.error('处理建议：将这些资源移动到允许依赖的公共 Bundle，或者让来源 Prefab 使用自己 Bundle 内的资源。');
-    console.error('Cocos Creator 尚未启动，本次没有执行构建。');
-    return false;
+    if (languageDefaultViolations.length === 0) {
+        if (policy.defaultLanguageBundle) {
+            console.log(`多语言默认资源检查通过：LanguageSprite、LanguageSpine 的默认资源为空或来自 ${policy.defaultLanguageBundle}。`);
+        }
+    } else {
+        console.error('');
+        console.error('【多语言默认资源检查失败】');
+        console.error(`原因：LanguageSprite、LanguageSpine 的默认资源必须为空，或来自默认中文 Bundle「${policy.defaultLanguageBundle}」。`);
+
+        for (const item of languageDefaultViolations) {
+            const targetAsset = item.targetAsset
+                ? projectRelative(projectRoot, item.targetAsset)
+                : `UUID ${item.resourceUuid}（未找到对应的项目资源）`;
+            console.error('');
+            console.error(`来源文件：${projectRelative(projectRoot, item.sourcePath)}`);
+            console.error(`控件路径：${item.controlPath}`);
+            console.error(`组件类型：${item.component}`);
+            console.error(`资源标识：${item.dataID || '<空>'}`);
+            console.error(`当前资源：${targetAsset}`);
+            console.error(`当前 Bundle：${item.targetBundle || '<无法识别>'}`);
+            console.error(`正确要求：默认资源请留空，或改用 ${policy.defaultLanguageBundle} 中的同名资源。`);
+        }
+
+        console.error('');
+        console.error('处理建议：在 Cocos Creator 中把对应多语言组件的默认图片或 Spine 改为中文资源后重新保存。');
+    }
+
+    const passed = violations.length === 0 && languageDefaultViolations.length === 0;
+    if (!passed) {
+        console.error('Cocos Creator 尚未启动，本次没有执行构建。');
+    }
+    return passed;
 }
 
 function checkBuilt(outputPath, policy) {
