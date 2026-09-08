@@ -158,6 +158,23 @@ function writeLanguageJson(result, outputPath) {
     )
 }
 
+function writeGameLanguageJson(result, outputPath) {
+    for (const language in result) {
+        if (!language || !Object.prototype.hasOwnProperty.call(result, language)) {
+            continue
+        }
+
+        const languageOutputPath = path.join(outputPath, language)
+        ensureDirectoryExists(languageOutputPath)
+        writeFileSync(
+            path.join(languageOutputPath, `${language}.json`),
+            JSON.stringify(result[language], null, 4)
+        )
+    }
+
+    console.log(`language excel to bundle json finished, output path is ${outputPath}`)
+}
+
 function getExcelFilesFromDir(dirPath) {
     if (!dirPath || !fs.existsSync(dirPath)) {
         return []
@@ -186,7 +203,7 @@ function convertGameLanguageTables() {
         mergeLanguageJson(mergedJson, jsonData, path.basename(filePath))
     })
 
-    writeLanguageJson(mergedJson, gameI18nOutputPath)
+    writeGameLanguageJson(mergedJson, gameI18nOutputPath)
     console.log(`✓ 游戏多语言表转换完成: ${excelFiles.length}个文件 -> ${gameI18nOutputPath}`)
 }
 

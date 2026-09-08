@@ -5,8 +5,8 @@
 # 游戏多语言文件输入目录（批量处理该目录下所有xlsx，忽略~$临时文件）
 gameI18nInputDir=excel/language
 
-# 游戏多语言文件输出路径
-gameI18nOutputPath=assets/resources/language/json
+# 游戏多语言 Bundle 根目录；每种语言输出到 <语言>/<语言>.json
+gameI18nOutputPath=assets/languages
 
 # 框架多语言路径由工具固定：
 # 输入：assets/framework/tools/i18n/FrameworkI18n.xlsx
