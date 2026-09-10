@@ -1,5 +1,5 @@
 @echo off
 pushd "%~dp0"
-node .\bin\index.js
+node ".\bin\run.js" %*
 popd
 pause
