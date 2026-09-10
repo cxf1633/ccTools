@@ -1,20 +1,16 @@
 # Excel转JSON工具配置文件
 # 格式：key=value
-# 支持相对路径，相对于项目根目录
+# 支持相对路径，相对于当前工具目录
 
-# 游戏多语言文件输入目录（批量处理该目录下所有xlsx，忽略~$临时文件）
-gameI18nInputDir=excel/language
+# 多语言文件输入目录（批量处理该目录下所有xlsx，忽略~$临时文件）
+languageInputDir=language
 
-# 游戏多语言 Bundle 根目录；每种语言输出到 <语言>/<语言>.json
-gameI18nOutputPath=assets/languages
-
-# 框架多语言路径由工具固定：
-# 输入：assets/framework/tools/i18n/FrameworkI18n.xlsx
-# 输出：assets/framework/language/json
+# 多语言输出目录；每种语言输出为 <语言>.json
+languageOutputPath=export
 
 # 配置文件输入路径（目录，支持批量处理）
-configInputPath=excel/configs
+configInputPath=configs
 
 # 配置文件输出路径（目录）
-configOutputPath=assets/resources/configs/
+configOutputPath=export
 

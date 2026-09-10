@@ -21,7 +21,7 @@
     "prettier": "^2.6.2"
   },
   "scripts": {
-    "example": "yarn && node ./bin/index.js -s ./examples/example.xlsx",
+    "export": "node ./bin/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

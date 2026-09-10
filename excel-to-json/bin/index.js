@@ -7,10 +7,8 @@ const { Command } = require('commander')
 const program = new Command()
 const { version } = require('../package.json')
 
-// 获取项目根目录（脚本所在目录的上级目录的上级目录的上级目录）
-const projectRoot = path.join(__dirname, '../../../')
-const FRAMEWORK_I18N_INPUT_PATH = path.resolve(projectRoot, 'assets/framework/tools/i18n/FrameworkI18n.xlsx')
-const FRAMEWORK_I18N_OUTPUT_PATH = path.resolve(projectRoot, 'assets/framework/language/json')
+// 工具根目录。输入、输出路径都相对于该目录解析，使工具可以独立使用。
+const toolRoot = path.resolve(__dirname, '..')
 
 // 读取配置文件中的路径
 function loadConfigPaths() {
@@ -18,14 +16,14 @@ function loadConfigPaths() {
     const configContent = fs.readFileSync(configPath, 'utf8')
     const config = {}
 
-    console.log('项目根目录:', projectRoot)
+    console.log('工具根目录:', toolRoot)
     
     configContent.split('\n').forEach(line => {
         line = line.trim()
         if (line && !line.startsWith('#')) {
             const [key, value] = line.split('=')
             if (key && value) {
-                const fullPath = path.resolve(projectRoot, value.trim())
+                const fullPath = path.resolve(toolRoot, value.trim())
                 config[key.trim()] = fullPath
                 console.log(`${key.trim()}: ${fullPath}`)
             }
@@ -36,15 +34,10 @@ function loadConfigPaths() {
 }
 
 const configPaths = loadConfigPaths()
-const gameI18nInputDir = configPaths.gameI18nInputDir
-const gameI18nOutputPath = configPaths.gameI18nOutputPath
+const languageInputDir = configPaths.languageInputDir
+const languageOutputPath = configPaths.languageOutputPath
 const configInputPath = configPaths.configInputPath
 const configOutputPath = configPaths.configOutputPath
-
-const go = (langPath, outputPath = null) => {
-    const jsonData = parseLanguageExcel(langPath)
-    writeLanguageJson(jsonData, outputPath || gameI18nOutputPath)
-}
 
 const parseLanguageExcel = (langPath) => {
     const workbook = xlsx.parse(langPath)
@@ -158,23 +151,6 @@ function writeLanguageJson(result, outputPath) {
     )
 }
 
-function writeGameLanguageJson(result, outputPath) {
-    for (const language in result) {
-        if (!language || !Object.prototype.hasOwnProperty.call(result, language)) {
-            continue
-        }
-
-        const languageOutputPath = path.join(outputPath, language)
-        ensureDirectoryExists(languageOutputPath)
-        writeFileSync(
-            path.join(languageOutputPath, `${language}.json`),
-            JSON.stringify(result[language], null, 4)
-        )
-    }
-
-    console.log(`language excel to bundle json finished, output path is ${outputPath}`)
-}
-
 function getExcelFilesFromDir(dirPath) {
     if (!dirPath || !fs.existsSync(dirPath)) {
         return []
@@ -189,34 +165,22 @@ function getExcelFilesFromDir(dirPath) {
         .map(file => path.join(dirPath, file))
 }
 
-function convertGameLanguageTables() {
-    const excelFiles = getExcelFilesFromDir(gameI18nInputDir)
+function convertLanguageTables() {
+    const excelFiles = getExcelFilesFromDir(languageInputDir)
     if (excelFiles.length === 0) {
-        console.log(`警告: 游戏多语言目录中没有找到Excel文件: ${gameI18nInputDir}`)
+        console.log(`警告: 多语言目录中没有找到Excel文件: ${languageInputDir}`)
         return
     }
 
     const mergedJson = {}
     excelFiles.forEach(filePath => {
-        console.log(`开始处理游戏多语言表: ${filePath}`)
+        console.log(`开始处理多语言表: ${filePath}`)
         const jsonData = parseLanguageExcel(filePath)
         mergeLanguageJson(mergedJson, jsonData, path.basename(filePath))
     })
 
-    writeGameLanguageJson(mergedJson, gameI18nOutputPath)
-    console.log(`✓ 游戏多语言表转换完成: ${excelFiles.length}个文件 -> ${gameI18nOutputPath}`)
-}
-
-function convertFrameworkLanguageTable() {
-    if (!fs.existsSync(FRAMEWORK_I18N_INPUT_PATH)) {
-        console.log(`警告: 框架多语言表文件不存在: ${FRAMEWORK_I18N_INPUT_PATH}`)
-        return
-    }
-
-    console.log(`开始处理框架多语言表: ${FRAMEWORK_I18N_INPUT_PATH}`)
-    const jsonData = parseLanguageExcel(FRAMEWORK_I18N_INPUT_PATH)
-    writeLanguageJson(jsonData, FRAMEWORK_I18N_OUTPUT_PATH)
-    console.log(`✓ 框架多语言表转换完成: ${path.basename(FRAMEWORK_I18N_INPUT_PATH)} -> ${FRAMEWORK_I18N_OUTPUT_PATH}`)
+    writeLanguageJson(mergedJson, languageOutputPath)
+    console.log(`✓ 多语言表转换完成: ${excelFiles.length}个文件 -> ${languageOutputPath}`)
 }
 
 function parseExcelToJson(filePath) {
@@ -352,24 +316,20 @@ function ensureDirectoryExists(dirPath) {
 
 program
     .version(version, '-V, --version')
-    .usage('--sourceFile <dir>')
-    .option('-s, --sourceFile <dir>', 'source file path need to be converted')
-    .action(options => {
+    .usage('[options]')
+    .action(() => {
         try {
             console.log('开始执行Excel转JSON转换...')
             console.log('当前工作目录:', process.cwd())
             console.log('配置路径:')
-            console.log('  gameI18nInputDir:', gameI18nInputDir)
-            console.log('  gameI18nOutputPath:', gameI18nOutputPath)
-            console.log('  FRAMEWORK_I18N_INPUT_PATH:', FRAMEWORK_I18N_INPUT_PATH)
-            console.log('  FRAMEWORK_I18N_OUTPUT_PATH:', FRAMEWORK_I18N_OUTPUT_PATH)
+            console.log('  languageInputDir:', languageInputDir)
+            console.log('  languageOutputPath:', languageOutputPath)
             console.log('  configInputPath:', configInputPath)
             console.log('  configOutputPath:', configOutputPath)
             
             // 处理多语言表
             console.log('开始处理多语言表...')
-            convertGameLanguageTables()
-            convertFrameworkLanguageTable()
+            convertLanguageTables()
             console.log('多语言表处理完成')
 
             
