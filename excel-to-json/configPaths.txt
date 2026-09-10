@@ -2,11 +2,13 @@
 # 格式：key=value
 # 支持相对路径，相对于当前工具目录
 
-# 多语言文件输入目录（批量处理该目录下所有xlsx，忽略~$临时文件）
-languageInputDir=language
+# 框架多语言表
+frameworkI18nInputPath=language/FrameworkI18n.xlsx
+frameworkI18nOutputPath=export/framework
 
-# 多语言输出目录；每种语言输出为 <语言>.json
-languageOutputPath=export
+# 游戏多语言表
+gameI18nInputPath=language/HoldemPokerI18n.xlsx
+gameI18nOutputPath=export/game
 
 # 配置文件输入路径（目录，支持批量处理）
 configInputPath=configs

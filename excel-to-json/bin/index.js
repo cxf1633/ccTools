@@ -34,8 +34,10 @@ function loadConfigPaths() {
 }
 
 const configPaths = loadConfigPaths()
-const languageInputDir = configPaths.languageInputDir
-const languageOutputPath = configPaths.languageOutputPath
+const frameworkI18nInputPath = configPaths.frameworkI18nInputPath
+const frameworkI18nOutputPath = configPaths.frameworkI18nOutputPath
+const gameI18nInputPath = configPaths.gameI18nInputPath
+const gameI18nOutputPath = configPaths.gameI18nOutputPath
 const configInputPath = configPaths.configInputPath
 const configOutputPath = configPaths.configOutputPath
 
@@ -104,31 +106,6 @@ const packageJsonData = (sheet, options, sourceName = '') => {
     return jsonData
 }
 
-function mergeLanguageJson(target, source, sourceName) {
-    for (const language in source) {
-        if (!Object.prototype.hasOwnProperty.call(source, language)) {
-            continue
-        }
-
-        if (!target[language]) {
-            target[language] = {}
-        }
-
-        const sourceLanguageData = source[language]
-        for (const key in sourceLanguageData) {
-            if (!Object.prototype.hasOwnProperty.call(sourceLanguageData, key)) {
-                continue
-            }
-
-            if (Object.prototype.hasOwnProperty.call(target[language], key)) {
-                throw new Error(`重复多语言Key: ${key} (${language}) in ${sourceName}`)
-            }
-
-            target[language][key] = sourceLanguageData[key]
-        }
-    }
-}
-
 function writeLanguageJson(result, outputPath) {
     ensureDirectoryExists(outputPath)
 
@@ -151,36 +128,15 @@ function writeLanguageJson(result, outputPath) {
     )
 }
 
-function getExcelFilesFromDir(dirPath) {
-    if (!dirPath || !fs.existsSync(dirPath)) {
-        return []
+function convertLanguageTable(label, inputPath, outputPath) {
+    if (!fs.existsSync(inputPath)) {
+        throw new Error(`${label}不存在: ${inputPath}`)
     }
 
-    if (!fs.statSync(dirPath).isDirectory()) {
-        return []
-    }
-
-    return fs.readdirSync(dirPath)
-        .filter(file => file.endsWith('.xlsx') && !file.startsWith('~$'))
-        .map(file => path.join(dirPath, file))
-}
-
-function convertLanguageTables() {
-    const excelFiles = getExcelFilesFromDir(languageInputDir)
-    if (excelFiles.length === 0) {
-        console.log(`警告: 多语言目录中没有找到Excel文件: ${languageInputDir}`)
-        return
-    }
-
-    const mergedJson = {}
-    excelFiles.forEach(filePath => {
-        console.log(`开始处理多语言表: ${filePath}`)
-        const jsonData = parseLanguageExcel(filePath)
-        mergeLanguageJson(mergedJson, jsonData, path.basename(filePath))
-    })
-
-    writeLanguageJson(mergedJson, languageOutputPath)
-    console.log(`✓ 多语言表转换完成: ${excelFiles.length}个文件 -> ${languageOutputPath}`)
+    console.log(`开始处理${label}: ${inputPath}`)
+    const jsonData = parseLanguageExcel(inputPath)
+    writeLanguageJson(jsonData, outputPath)
+    console.log(`✓ ${label}转换完成: ${path.basename(inputPath)} -> ${outputPath}`)
 }
 
 function parseExcelToJson(filePath) {
@@ -322,14 +278,17 @@ program
             console.log('开始执行Excel转JSON转换...')
             console.log('当前工作目录:', process.cwd())
             console.log('配置路径:')
-            console.log('  languageInputDir:', languageInputDir)
-            console.log('  languageOutputPath:', languageOutputPath)
+            console.log('  frameworkI18nInputPath:', frameworkI18nInputPath)
+            console.log('  frameworkI18nOutputPath:', frameworkI18nOutputPath)
+            console.log('  gameI18nInputPath:', gameI18nInputPath)
+            console.log('  gameI18nOutputPath:', gameI18nOutputPath)
             console.log('  configInputPath:', configInputPath)
             console.log('  configOutputPath:', configOutputPath)
             
-            // 处理多语言表
+            // 框架与游戏语言表分别输出，避免同名语言 JSON 互相覆盖。
             console.log('开始处理多语言表...')
-            convertLanguageTables()
+            convertLanguageTable('框架多语言表', frameworkI18nInputPath, frameworkI18nOutputPath)
+            convertLanguageTable('游戏多语言表', gameI18nInputPath, gameI18nOutputPath)
             console.log('多语言表处理完成')
 
             
