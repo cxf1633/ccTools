@@ -579,11 +579,12 @@ function checkBuilt(outputPath, policy) {
 
         const bundlePath = path.join(bundleAssetsPath, bundleName);
         const configFiles = fs.readdirSync(bundlePath)
-            .filter((name) => /^config.*\.json$/i.test(name))
+            // Android 原生产物使用 cc.config.json，Web 使用 config*.json。
+            .filter((name) => /^(?:cc\.)?config.*\.json$/i.test(name))
             .map((name) => ({ name, mtime: fs.statSync(path.join(bundlePath, name)).mtimeMs }))
             .sort((left, right) => right.mtime - left.mtime);
         if (configFiles.length === 0) {
-            throw new Error(`找不到 Bundle ${bundleName} 的 config*.json：${bundlePath}`);
+            throw new Error(`找不到 Bundle ${bundleName} 的 config*.json 或 cc.config*.json：${bundlePath}`);
         }
 
         const bundleConfig = readJson(path.join(bundlePath, configFiles[0].name));
