@@ -1,9 +1,27 @@
 # Cocos Creator 命令行构建工具
 
+## Android
+
+`build-android.js` 保存共享打包实现，项目入口和配置保留在各自主仓库。直接调用示例：
+
+```powershell
+node tools/cocos-build/build-android.js --project-root . --config cocos-build/build-config-android.json --tool-config cocos-build/tool-config.json --check
+```
+
+`--project-root` 默认为当前工作目录，两个配置路径相对于项目目录解析。项目 BAT 应传入绝对路径，以支持从任意目录启动。项目中的中文入口为 `cocos-build/打安卓包.bat`，Web 入口为 `cocos-build/打网页包.bat`。
+
+Android 支持 `--mode debug|release`、`--skip-cocos`、`--creator`、`--java-home`。源码和构建产物依赖检查均使用同目录的 `check-bundle-dependencies.js`。
+
+项目 `tool-config.json` 可设置 `android.apkNameTemplate` 和 `android.apkOutputDirectory`：模板支持 `{index}`（从 1 开始）、`{version}`、`{originalName}`（含 .apk）、`{mode}`；默认模板为 `{index}-v{version}-{originalName}`。输出目录默认为项目下的 `build/apk`，每次构建创建北京时间精确到分钟的子目录，同分钟重复构建自动加序号。APK、日志和耗时记录都保存在该目录。
+
+共享实现属于 `tools` 子模块；提交时先提交子模块改动，再在主仓库提交入口、配置和子模块引用。
+
+## Web Mobile
+
 项目通过主仓库中的 BAT 入口执行 Web Mobile 构建：
 
 ```powershell
-.\cocos-build\build-web-mobile.bat
+.\cocos-build\打网页包.bat
 ```
 
 构建规则由项目主仓库的 `cocos-build/tool-config.json` 配置，例如：
@@ -49,7 +67,7 @@
 
 ```powershell
 $env:COCOS_CREATOR_EXE = 'D:\Cocos\Creator\3.8.8\CocosCreator.exe'
-.\cocos-build\build-web-mobile.bat
+.\cocos-build\打网页包.bat
 ```
 
 也可以直接向 PowerShell 工具传入 `-CreatorExe`；优先级为命令行参数、`COCOS_CREATOR_EXE` 环境变量、`tool-config.json`。
@@ -78,7 +96,7 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 调查现有依赖问题期间，如需临时跳过源码 UUID 和构建产物 `deps` 两层检查并产出构建包，可执行：
 
 ```powershell
-.\cocos-build\build-web-mobile.bat -SkipBundleDependencyCheck
+.\cocos-build\打网页包.bat -SkipBundleDependencyCheck
 ```
 
 项目构建配置由主仓库的 `cocos-build/web-mobile.json` 维护。构建面板选项或参与构建的场景发生变化时，应明确更新该文件，不要直接使用编辑器生成的 `profiles/v2/packages/builder.json` 作为命令行配置。
