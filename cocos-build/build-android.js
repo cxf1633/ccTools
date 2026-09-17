@@ -173,7 +173,8 @@ async function main() {
         await run(process.execPath, [path.resolve(root, tool.android.prepareScript), '--platform', 'android', '--data', nativeData],
             root, env, path.join(logs, 'prepare-hot-update.log'));
     }
-    if (!fs.existsSync(path.join(proj, 'gradlew.bat'))) throw new Error(`未找到 Gradle Wrapper，请确认 Android 工程已生成：${proj}`);
+    const gradleWrapper = path.join(proj, 'gradlew.bat');
+    if (!fs.existsSync(gradleWrapper)) throw new Error(`未找到 Gradle Wrapper，请确认 Android 工程已生成：${proj}`);
     const task = options.mode === 'debug' ? 'assembleDebug' : 'assembleRelease';
     // 在 AGP 完成 DSL 配置时注入版本，覆盖模板默认值；完整构建和跳过 Cocos 均生效。
     // 使用临时 init script，不改动 Cocos 生成或用户维护的 build.gradle。
@@ -187,9 +188,12 @@ async function main() {
 }
 `, 'utf8');
     env.COCOS_ANDROID_VERSION_INIT = versionInit;
-    // 固定命令，通过 cwd 定位 BAT；用户输入不拼入 cmd 命令，支持中文及空格路径。
+    // 固定命令，用户输入不拼入 cmd 命令，支持中文及空格路径。
+    // 用 call + 绝对路径调用 Wrapper：进程环境若设置了 NoDefaultCurrentDirectoryInExePath，
+    // cmd 不会搜索当前目录，裸写 gradlew.bat 会报“不是内部或外部命令”。
+    // 命令串必须以非引号字符开头，否则 cmd /s 会剥掉首个引号。
     await run(env.ComSpec || 'cmd.exe', ['/d', '/s', '/c',
-        `gradlew.bat ${task} -PPROP_IS_DEBUG=${options.mode === 'debug'} --init-script "%COCOS_ANDROID_VERSION_INIT%" --console=plain --stacktrace`],
+        `call "${gradleWrapper}" ${task} -PPROP_IS_DEBUG=${options.mode === 'debug'} --init-script "%COCOS_ANDROID_VERSION_INIT%" --console=plain --stacktrace`],
     proj, env, path.join(logs, 'gradle.log'));
     // 使用 AGP 元数据取 APK，不依赖 Cocos 动态模块名，也不误收其他 variant 的历史 APK。
     const apks = [];
