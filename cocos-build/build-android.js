@@ -169,6 +169,10 @@ async function main() {
     await run(process.execPath, [dependencyChecker, '--mode', 'built', '--output', nativeData, '--tool-config', toolConfigPath],
         root, env, path.join(logs, 'dependency-built.log'));
     fs.appendFileSync(buildLogPath, 'Android 构建产物依赖检查通过。\n', 'utf8');
+    if (tool.android?.prepareScript) {
+        await run(process.execPath, [path.resolve(root, tool.android.prepareScript), '--platform', 'android', '--data', nativeData],
+            root, env, path.join(logs, 'prepare-hot-update.log'));
+    }
     if (!fs.existsSync(path.join(proj, 'gradlew.bat'))) throw new Error(`未找到 Gradle Wrapper，请确认 Android 工程已生成：${proj}`);
     const task = options.mode === 'debug' ? 'assembleDebug' : 'assembleRelease';
     // 在 AGP 完成 DSL 配置时注入版本，覆盖模板默认值；完整构建和跳过 Cocos 均生效。

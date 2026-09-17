@@ -18,6 +18,8 @@ Android 支持 `--mode debug|release`、`--skip-cocos`、`--creator`、`--java-h
 
 共享实现属于 `tools` 子模块；提交时先提交子模块改动，再在主仓库提交入口、配置和子模块引用。
 
+可选 `android.prepareScript` 指向项目内的 Node.js 准备脚本。产物依赖检查通过后、Gradle 编译前调用，传入 `--platform android --data <原生产物目录>`，工作目录为项目根目录；失败立即停止打包，日志为 `prepare-hot-update.log`。适用于注入项目自身的热更新启动配置。
+
 ## Web Mobile
 
 项目通过主仓库中的 BAT 入口执行 Web Mobile 构建：
