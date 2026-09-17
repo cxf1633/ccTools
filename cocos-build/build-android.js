@@ -24,7 +24,9 @@ function parseArgs(args) {
 function run(exe, args, cwd, env, logFile, successCode = 0) {
     return new Promise((resolve, reject) => {
         const log = fs.createWriteStream(logFile);
-        const child = spawn(exe, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        // cmd 的 /c 命令由调用方完成引用；禁用 Node 的 CRT 引号转义，避免将 \" 传给 Gradle。
+        const windowsVerbatimArguments = process.platform === 'win32' && path.basename(exe).toLowerCase() === 'cmd.exe';
+        const child = spawn(exe, args, { cwd, env, windowsHide: true, windowsVerbatimArguments, stdio: ['ignore', 'pipe', 'pipe'] });
         log.on('error', error => { child.kill(); reject(error); });
         child.stdout.on('data', data => { process.stdout.write(data); log.write(data); });
         child.stderr.on('data', data => { process.stderr.write(data); log.write(data); });
@@ -59,6 +61,11 @@ async function main() {
     }
     if (process.platform !== 'win32') throw new Error('此打包脚本需要在 Windows 系统中运行。');
     const root = path.resolve(options['project-root']);
+    const versionPath = path.join(root, 'version.txt');
+    const version = fs.readFileSync(versionPath, 'utf8').replace(/^\uFEFF/, '').trim();
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+        throw new Error(`版本号格式无效，请在 ${versionPath} 填写三段数字，例如 0.1.0。`);
+    }
     const configPath = path.resolve(root, options.config);
     const config = readJson(configPath);
     const toolConfigPath = path.resolve(root, options['tool-config']);
@@ -100,6 +107,7 @@ async function main() {
         throw new Error(`请先通过 Cocos 构建生成 Android 工程：${proj}`);
     }
     console.log(`构建模式：${options.mode === 'debug' ? '调试版（Debug）' : '发布版（Release）'}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}`);
+    console.log(`安装包版本：${version}（${versionPath}）`);
     if (options.mode === 'release' && config.packages?.android?.useDebugKeystore) {
         console.log('提示：当前配置使用 Cocos 调试证书，正式发布前请配置正式签名证书。');
     }
@@ -127,6 +135,7 @@ async function main() {
     buildLogPath = path.join(logs, 'build.log');
     fs.writeFileSync(buildLogPath, `开始时间：${new Date().toISOString()}\n构建模式：${options.mode}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}\n跳过 Cocos：${options['skip-cocos'] ? '是' : '否'}\n`, 'utf8');
     console.log(`打包日志目录：${logs}`);
+    fs.appendFileSync(buildLogPath, `安装包版本：${version}\n版本文件：${versionPath}\n`, 'utf8');
     console.log('开始检查源资源跨 Bundle 引用和多语言默认资源。');
     await run(process.execPath, [dependencyChecker, '--mode', 'source', '--project-root', root, '--tool-config', toolConfigPath],
         root, env, path.join(logs, 'dependency-source.log'));
@@ -162,9 +171,21 @@ async function main() {
     fs.appendFileSync(buildLogPath, 'Android 构建产物依赖检查通过。\n', 'utf8');
     if (!fs.existsSync(path.join(proj, 'gradlew.bat'))) throw new Error(`未找到 Gradle Wrapper，请确认 Android 工程已生成：${proj}`);
     const task = options.mode === 'debug' ? 'assembleDebug' : 'assembleRelease';
+    // 在 AGP 完成 DSL 配置时注入版本，覆盖模板默认值；完整构建和跳过 Cocos 均生效。
+    // 使用临时 init script，不改动 Cocos 生成或用户维护的 build.gradle。
+    const versionInit = path.join(logs, 'version.init.gradle');
+    fs.writeFileSync(versionInit, `gradle.beforeProject { project ->
+    project.plugins.withId('com.android.application') {
+        project.extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.defaultConfig.versionName = '${version}'
+        }
+    }
+}
+`, 'utf8');
+    env.COCOS_ANDROID_VERSION_INIT = versionInit;
     // 固定命令，通过 cwd 定位 BAT；用户输入不拼入 cmd 命令，支持中文及空格路径。
     await run(env.ComSpec || 'cmd.exe', ['/d', '/s', '/c',
-        `gradlew.bat ${task} -PPROP_IS_DEBUG=${options.mode === 'debug'} --console=plain --stacktrace`],
+        `gradlew.bat ${task} -PPROP_IS_DEBUG=${options.mode === 'debug'} --init-script "%COCOS_ANDROID_VERSION_INIT%" --console=plain --stacktrace`],
     proj, env, path.join(logs, 'gradle.log'));
     // 使用 AGP 元数据取 APK，不依赖 Cocos 动态模块名，也不误收其他 variant 的历史 APK。
     const apks = [];
@@ -172,6 +193,9 @@ async function main() {
         const metadata = readJson(file);
         if (metadata.variantName !== options.mode || metadata.artifactType?.type !== 'APK') continue;
         for (const element of metadata.elements || []) {
+            if (element.versionName !== version) {
+                throw new Error(`APK 版本与 version.txt 不一致：预期 ${version}，实际 ${element.versionName}。元数据：${file}`);
+            }
             const apk = path.resolve(path.dirname(file), element.outputFile);
             if (!apk.startsWith(path.dirname(file) + path.sep) || !apk.endsWith('.apk') || !fs.existsSync(apk)) {
                 throw new Error(`APK 路径无效或文件不存在，请检查元数据文件：${file}`);

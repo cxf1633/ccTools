@@ -12,6 +12,8 @@ node tools/cocos-build/build-android.js --project-root . --config cocos-build/bu
 
 Android 支持 `--mode debug|release`、`--skip-cocos`、`--creator`、`--java-home`。源码和构建产物依赖检查均使用同目录的 `check-bundle-dependencies.js`。
 
+项目根目录必须提供 `version.txt`，内容为三段数字版本号（例如 `0.1.0`）。脚本读取并校验后，通过 Gradle init script 的 AGP `finalizeDsl` 注入 `versionName`，构建后校验 APK 元数据版本一致；不修改 `versionCode`，不递增版本文件。`--check` 也会检查版本文件。
+
 项目 `tool-config.json` 可设置 `android.apkNameTemplate` 和 `android.apkOutputDirectory`：模板支持 `{index}`（从 1 开始）、`{version}`、`{originalName}`（含 .apk）、`{mode}`；默认模板为 `{index}-v{version}-{originalName}`。输出目录默认为项目下的 `build/apk`，每次构建创建北京时间精确到分钟的子目录，同分钟重复构建自动加序号。APK、日志和耗时记录都保存在该目录。
 
 共享实现属于 `tools` 子模块；提交时先提交子模块改动，再在主仓库提交入口、配置和子模块引用。
