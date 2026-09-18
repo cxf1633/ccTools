@@ -12,7 +12,7 @@ function parseArgs(args) {
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (['--help', '--check', '--skip-cocos', '--resources-only'].includes(arg)) options[arg.slice(2)] = true;
-        else if (['--mode', '--project-root', '--config', '--tool-config', '--creator', '--java-home'].includes(arg)) {
+        else if (['--mode', '--project-root', '--config', '--tool-config', '--creator', '--java-home', '--log-directory'].includes(arg)) {
             if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`参数缺少值：${arg}`);
             options[arg.slice(2)] = args[++i];
         } else throw new Error(`未知参数：${arg}`);
@@ -68,7 +68,7 @@ async function main() {
     const options = parseArgs(process.argv.slice(2));
     if (options.help) {
         console.log('用法：node tools/cocos-build/build-android.js [--mode debug|release] [--skip-cocos] [--resources-only] [--check]\n' +
-            '       [--project-root 项目目录] [--config 路径] [--tool-config 路径] [--creator 路径] [--java-home 路径]\n' +
+            '       [--project-root 项目目录] [--config 路径] [--tool-config 路径] [--creator 路径] [--java-home 路径] [--log-directory 路径]\n' +
             '项目目录默认为当前工作目录；相对配置路径以项目目录为基准。\n' +
             '默认：重新构建 Cocos，编译调试版 APK，并复制到 build/apk/<时间戳>。\n' +
             '--check：仅检查配置和 Java，不构建。--skip-cocos：跳过 Cocos，编译现有 Android 工程。\n' +
@@ -134,19 +134,28 @@ async function main() {
     }
     // 北京时间，精确到分钟；Windows 文件夹名不能包含冒号。
     const minuteStamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
-    const outputDirectory = options['resources-only']
-        ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
-        : path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
+    const requestedLogDirectory = options['log-directory'] ? path.resolve(root, options['log-directory']) : null;
+    if (requestedLogDirectory) {
+        const relative = path.relative(path.join(root, 'build'), requestedLogDirectory);
+        if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+            throw new Error('--log-directory 必须是项目 build/ 下的新目录。');
+        }
+    }
+    const outputDirectory = requestedLogDirectory
+        ? path.dirname(requestedLogDirectory)
+        : options['resources-only']
+            ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
+            : path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
     fs.mkdirSync(outputDirectory, { recursive: true });
-    let stamp = minuteStamp;
+    let stamp = requestedLogDirectory ? path.basename(requestedLogDirectory) : minuteStamp;
     let destination;
     for (let sequence = 1; ; sequence++) {
-        destination = path.join(outputDirectory, stamp);
+        destination = requestedLogDirectory || path.join(outputDirectory, stamp);
         try {
             fs.mkdirSync(destination);
             break;
         } catch (error) {
-            if (error.code !== 'EEXIST') throw error;
+            if (error.code !== 'EEXIST' || requestedLogDirectory) throw error;
             stamp = `${minuteStamp}_${sequence + 1}`;
         }
     }
