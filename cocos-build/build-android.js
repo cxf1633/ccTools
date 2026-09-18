@@ -61,15 +61,16 @@ async function main() {
     }
     if (process.platform !== 'win32') throw new Error('此打包脚本需要在 Windows 系统中运行。');
     const root = path.resolve(options['project-root']);
-    const versionPath = path.join(root, 'version.txt');
-    const version = fs.readFileSync(versionPath, 'utf8').replace(/^\uFEFF/, '').trim();
-    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
-        throw new Error(`版本号格式无效，请在 ${versionPath} 填写三段数字，例如 0.1.0。`);
-    }
     const configPath = path.resolve(root, options.config);
     const config = readJson(configPath);
     const toolConfigPath = path.resolve(root, options['tool-config']);
     const tool = readJson(toolConfigPath);
+    const releaseConfigPath = path.resolve(root, tool.android?.releaseConfig || 'cocos-build/release-config.json');
+    const releaseConfig = readJson(releaseConfigPath);
+    const version = releaseConfig.platforms?.android?.appVersion;
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version || '')) {
+        throw new Error(`程序版本格式无效，请在 ${releaseConfigPath} 的 platforms.android.appVersion 填写三段数字，例如 0.1.0。`);
+    }
     const apkNameTemplate = tool.android?.apkNameTemplate || '{index}-v{version}-{originalName}';
     if (typeof apkNameTemplate !== 'string' || /\{(?!index\}|version\}|originalName\}|mode\})/.test(apkNameTemplate)) {
         throw new Error('android.apkNameTemplate 只支持 {index}、{version}、{originalName}、{mode} 占位符。');
@@ -107,7 +108,7 @@ async function main() {
         throw new Error(`请先通过 Cocos 构建生成 Android 工程：${proj}`);
     }
     console.log(`构建模式：${options.mode === 'debug' ? '调试版（Debug）' : '发布版（Release）'}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}`);
-    console.log(`安装包版本：${version}（${versionPath}）`);
+    console.log(`安装包版本：${version}（${releaseConfigPath}）`);
     if (options.mode === 'release' && config.packages?.android?.useDebugKeystore) {
         console.log('提示：当前配置使用 Cocos 调试证书，正式发布前请配置正式签名证书。');
     }
@@ -135,7 +136,7 @@ async function main() {
     buildLogPath = path.join(logs, 'build.log');
     fs.writeFileSync(buildLogPath, `开始时间：${new Date().toISOString()}\n构建模式：${options.mode}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}\n跳过 Cocos：${options['skip-cocos'] ? '是' : '否'}\n`, 'utf8');
     console.log(`打包日志目录：${logs}`);
-    fs.appendFileSync(buildLogPath, `安装包版本：${version}\n版本文件：${versionPath}\n`, 'utf8');
+    fs.appendFileSync(buildLogPath, `安装包版本：${version}\n发布配置：${releaseConfigPath}\n`, 'utf8');
     console.log('开始检查源资源跨 Bundle 引用和多语言默认资源。');
     await run(process.execPath, [dependencyChecker, '--mode', 'source', '--project-root', root, '--tool-config', toolConfigPath],
         root, env, path.join(logs, 'dependency-source.log'));
@@ -202,7 +203,7 @@ async function main() {
         if (metadata.variantName !== options.mode || metadata.artifactType?.type !== 'APK') continue;
         for (const element of metadata.elements || []) {
             if (element.versionName !== version) {
-                throw new Error(`APK 版本与 version.txt 不一致：预期 ${version}，实际 ${element.versionName}。元数据：${file}`);
+                throw new Error(`APK 版本与 appVersion 不一致：预期 ${version}，实际 ${element.versionName}。元数据：${file}`);
             }
             const apk = path.resolve(path.dirname(file), element.outputFile);
             if (!apk.startsWith(path.dirname(file) + path.sep) || !apk.endsWith('.apk') || !fs.existsSync(apk)) {
