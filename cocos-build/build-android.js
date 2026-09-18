@@ -67,13 +67,13 @@ async function main() {
     const tool = readJson(toolConfigPath);
     const releaseConfigPath = path.resolve(root, tool.android?.releaseConfig || 'cocos-build/release-config.json');
     const releaseConfig = readJson(releaseConfigPath);
-    const version = releaseConfig.platforms?.android?.appVersion;
-    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version || '')) {
+    const appVersion = releaseConfig.platforms?.android?.appVersion;
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(appVersion || '')) {
         throw new Error(`程序版本格式无效，请在 ${releaseConfigPath} 的 platforms.android.appVersion 填写三段数字，例如 0.1.0。`);
     }
     const apkNameTemplate = tool.android?.apkNameTemplate || '{index}-v{version}-{originalName}';
-    if (typeof apkNameTemplate !== 'string' || /\{(?!index\}|version\}|originalName\}|mode\})/.test(apkNameTemplate)) {
-        throw new Error('android.apkNameTemplate 只支持 {index}、{version}、{originalName}、{mode} 占位符。');
+    if (typeof apkNameTemplate !== 'string' || /\{(?!index\}|version\}|appVersion\}|originalName\}|mode\})/.test(apkNameTemplate)) {
+        throw new Error('android.apkNameTemplate 只支持 {index}、{version}、{appVersion}、{originalName}、{mode} 占位符。');
     }
     const dependencyChecker = path.join(__dirname, 'check-bundle-dependencies.js');
     if (!fs.existsSync(dependencyChecker)) throw new Error(`未找到共享资源依赖检查器，请确认 tools/cocos-build 子模块已初始化：${dependencyChecker}`);
@@ -108,7 +108,7 @@ async function main() {
         throw new Error(`请先通过 Cocos 构建生成 Android 工程：${proj}`);
     }
     console.log(`构建模式：${options.mode === 'debug' ? '调试版（Debug）' : '发布版（Release）'}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}`);
-    console.log(`安装包版本：${version}（${releaseConfigPath}）`);
+    console.log(`程序版本：${appVersion}（${releaseConfigPath}）`);
     if (options.mode === 'release' && config.packages?.android?.useDebugKeystore) {
         console.log('提示：当前配置使用 Cocos 调试证书，正式发布前请配置正式签名证书。');
     }
@@ -136,7 +136,7 @@ async function main() {
     buildLogPath = path.join(logs, 'build.log');
     fs.writeFileSync(buildLogPath, `开始时间：${new Date().toISOString()}\n构建模式：${options.mode}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}\n跳过 Cocos：${options['skip-cocos'] ? '是' : '否'}\n`, 'utf8');
     console.log(`打包日志目录：${logs}`);
-    fs.appendFileSync(buildLogPath, `安装包版本：${version}\n发布配置：${releaseConfigPath}\n`, 'utf8');
+    fs.appendFileSync(buildLogPath, `程序版本：${appVersion}\n发布配置：${releaseConfigPath}\n`, 'utf8');
     console.log('开始检查源资源跨 Bundle 引用和多语言默认资源。');
     await run(process.execPath, [dependencyChecker, '--mode', 'source', '--project-root', root, '--tool-config', toolConfigPath],
         root, env, path.join(logs, 'dependency-source.log'));
@@ -183,7 +183,7 @@ async function main() {
     fs.writeFileSync(versionInit, `gradle.beforeProject { project ->
     project.plugins.withId('com.android.application') {
         project.extensions.getByName('androidComponents').finalizeDsl { android ->
-            android.defaultConfig.versionName = '${version}'
+            android.defaultConfig.versionName = '${appVersion}'
         }
     }
 }
@@ -202,21 +202,21 @@ async function main() {
         const metadata = readJson(file);
         if (metadata.variantName !== options.mode || metadata.artifactType?.type !== 'APK') continue;
         for (const element of metadata.elements || []) {
-            if (element.versionName !== version) {
-                throw new Error(`APK 版本与 appVersion 不一致：预期 ${version}，实际 ${element.versionName}。元数据：${file}`);
+            if (element.versionName !== appVersion) {
+                throw new Error(`APK 版本与 appVersion 不一致：预期 ${appVersion}，实际 ${element.versionName}。元数据：${file}`);
             }
             const apk = path.resolve(path.dirname(file), element.outputFile);
             if (!apk.startsWith(path.dirname(file) + path.sep) || !apk.endsWith('.apk') || !fs.existsSync(apk)) {
                 throw new Error(`APK 路径无效或文件不存在，请检查元数据文件：${file}`);
             }
-            apks.push({ apk, version: element.versionName || String(element.versionCode || 'unknown') });
+            apks.push({ apk, appVersion: element.versionName || String(element.versionCode || 'unknown') });
         }
     }
     if (!apks.length) throw new Error(`Gradle 编译成功，但在 ${proj}/build 下未找到 ${options.mode} 版本的 APK 元数据。`);
-    for (const [index, { apk, version }] of apks.entries()) {
-        const safeVersion = version.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const values = { index: String(index + 1), version: safeVersion, originalName: path.basename(apk), mode: options.mode };
-        const apkName = apkNameTemplate.replace(/\{(index|version|originalName|mode)\}/g, (_, key) => values[key]);
+    for (const [index, { apk, appVersion: apkAppVersion }] of apks.entries()) {
+        const safeAppVersion = apkAppVersion.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const values = { index: String(index + 1), version: safeAppVersion, appVersion: safeAppVersion, originalName: path.basename(apk), mode: options.mode };
+        const apkName = apkNameTemplate.replace(/\{(index|version|appVersion|originalName|mode)\}/g, (_, key) => values[key]);
         if (/[<>:"/\\|?*\x00-\x1f{}]/.test(apkName) || !apkName.toLowerCase().endsWith('.apk')) {
             throw new Error(`APK 命名模板生成了无效文件名：${apkName}`);
         }

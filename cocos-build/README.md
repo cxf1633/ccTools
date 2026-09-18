@@ -14,7 +14,7 @@ Android 支持 `--mode debug|release`、`--skip-cocos`、`--creator`、`--java-h
 
 项目通过 `tool-config.json` 的 `android.releaseConfig` 指向发布配置，脚本读取其中 `platforms.android.appVersion`，通过 Gradle init script 的 AGP `finalizeDsl` 注入 `versionName`，构建后校验 APK 元数据版本一致；不修改 `versionCode`，不自动递增版本。`--check` 也会检查程序版本。
 
-项目 `tool-config.json` 可设置 `android.apkNameTemplate` 和 `android.apkOutputDirectory`：模板支持 `{index}`（从 1 开始）、`{version}`、`{originalName}`（含 .apk）、`{mode}`；默认模板为 `{index}-v{version}-{originalName}`。输出目录默认为项目下的 `build/apk`，每次构建创建北京时间精确到分钟的子目录，同分钟重复构建自动加序号。APK、日志和耗时记录都保存在该目录。
+项目 `tool-config.json` 可设置 `android.apkNameTemplate` 和 `android.apkOutputDirectory`：模板支持 `{index}`（从 1 开始）、`{version}`（兼容旧配置，等同于 `{appVersion}`）、`{appVersion}`、`{originalName}`（含 .apk）、`{mode}`；默认模板为 `{index}-v{version}-{originalName}`。输出目录默认为项目下的 `build/apk`，每次构建创建北京时间精确到分钟的子目录，同分钟重复构建自动加序号。APK、日志和耗时记录都保存在该目录。
 
 共享实现属于 `tools` 子模块；提交时先提交子模块改动，再在主仓库提交入口、配置和子模块引用。
 
