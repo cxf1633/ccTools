@@ -6,11 +6,12 @@
 
 ```powershell
 node tools/cocos-build/build-android.js --project-root . --config cocos-build/build-config-android.json --tool-config cocos-build/tool-config.json --check
+node tools/cocos-build/build-android.js --project-root . --config cocos-build/build-config-android.json --tool-config cocos-build/tool-config.json --resources-only
 ```
 
-`--project-root` 默认为当前工作目录，两个配置路径相对于项目目录解析。项目 BAT 应传入绝对路径，以支持从任意目录启动。项目中的中文入口为 `cocos-build/打安卓包.bat`，Web 入口为 `cocos-build/打网页包.bat`。
+`--project-root` 默认为当前工作目录，两个配置路径相对于项目目录解析。项目 BAT 应传入绝对路径，以支持从任意目录启动。
 
-Android 支持 `--mode debug|release`、`--skip-cocos`、`--creator`、`--java-home`。源码和构建产物依赖检查均使用同目录的 `check-bundle-dependencies.js`。
+Android 支持 `--mode debug|release`、`--skip-cocos`、`--resources-only`、`--creator`、`--java-home`。`--resources-only` 会重新构建 Cocos Android 资源并完成构建前后的依赖检查，在 Gradle 前停止，不生成 APK。源码和构建产物依赖检查均使用同目录的 `check-bundle-dependencies.js`。
 
 项目通过 `tool-config.json` 的 `android.releaseConfig` 指向发布配置，脚本读取其中 `platforms.android.appVersion`，通过 Gradle init script 的 AGP `finalizeDsl` 注入 `versionName`，构建后校验 APK 元数据版本一致；不修改 `versionCode`，不自动递增版本。`--check` 也会检查程序版本。
 

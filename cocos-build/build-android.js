@@ -11,13 +11,14 @@ function parseArgs(args) {
     const options = { mode: 'debug', 'project-root': process.cwd(), config: 'cocos-build/build-config-android.json', 'tool-config': 'cocos-build/tool-config.json' };
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
-        if (['--help', '--check', '--skip-cocos'].includes(arg)) options[arg.slice(2)] = true;
+        if (['--help', '--check', '--skip-cocos', '--resources-only'].includes(arg)) options[arg.slice(2)] = true;
         else if (['--mode', '--project-root', '--config', '--tool-config', '--creator', '--java-home'].includes(arg)) {
             if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`参数缺少值：${arg}`);
             options[arg.slice(2)] = args[++i];
         } else throw new Error(`未知参数：${arg}`);
     }
     if (!['debug', 'release'].includes(options.mode)) throw new Error('--mode 只能设置为 debug（调试）或 release（发布）');
+    if (options['resources-only'] && options['skip-cocos']) throw new Error('--resources-only 不能与 --skip-cocos 同时使用。');
     return options;
 }
 
@@ -48,15 +49,30 @@ function findMetadata(directory) {
     });
 }
 
+function readInjectedManifest(mainPath) {
+    const main = fs.readFileSync(mainPath, 'utf8');
+    const prefix = 'window.__thirteenHotUpdate = restore(';
+    const start = main.indexOf(prefix);
+    const contentStart = start + prefix.length;
+    const contentEnd = main.indexOf(', jsb.fileUtils);', contentStart);
+    if (start < 0 || contentEnd < 0) throw new Error(`APK 启动入口未包含包内资源清单：${mainPath}`);
+    const boot = JSON.parse(main.slice(contentStart, contentEnd));
+    if (!boot?.manifest?.assets || typeof boot.manifest.assets !== 'object') {
+        throw new Error(`APK 启动入口中的包内资源清单无效：${mainPath}`);
+    }
+    return boot.manifest;
+}
+
 async function main() {
     const startedAt = process.hrtime.bigint();
     const options = parseArgs(process.argv.slice(2));
     if (options.help) {
-        console.log('用法：node tools/cocos-build/build-android.js [--mode debug|release] [--skip-cocos] [--check]\n' +
+        console.log('用法：node tools/cocos-build/build-android.js [--mode debug|release] [--skip-cocos] [--resources-only] [--check]\n' +
             '       [--project-root 项目目录] [--config 路径] [--tool-config 路径] [--creator 路径] [--java-home 路径]\n' +
             '项目目录默认为当前工作目录；相对配置路径以项目目录为基准。\n' +
             '默认：重新构建 Cocos，编译调试版 APK，并复制到 build/apk/<时间戳>。\n' +
-            '--check：仅检查配置和 Java，不构建。--skip-cocos：跳过 Cocos，编译现有 Android 工程。');
+            '--check：仅检查配置和 Java，不构建。--skip-cocos：跳过 Cocos，编译现有 Android 工程。\n' +
+            '--resources-only：重新构建 Cocos Android 资源并完成依赖检查，在 APK 清单注入和 Gradle 前停止，不生成 APK。');
         return;
     }
     if (process.platform !== 'win32') throw new Error('此打包脚本需要在 Windows 系统中运行。');
@@ -118,12 +134,14 @@ async function main() {
     }
     // 北京时间，精确到分钟；Windows 文件夹名不能包含冒号。
     const minuteStamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
-    const apkDirectory = path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
-    fs.mkdirSync(apkDirectory, { recursive: true });
+    const outputDirectory = options['resources-only']
+        ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
+        : path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
+    fs.mkdirSync(outputDirectory, { recursive: true });
     let stamp = minuteStamp;
     let destination;
     for (let sequence = 1; ; sequence++) {
-        destination = path.join(apkDirectory, stamp);
+        destination = path.join(outputDirectory, stamp);
         try {
             fs.mkdirSync(destination);
             break;
@@ -135,7 +153,7 @@ async function main() {
     const logs = destination;
     buildLogPath = path.join(logs, 'build.log');
     fs.writeFileSync(buildLogPath, `开始时间：${new Date().toISOString()}\n构建模式：${options.mode}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}\n跳过 Cocos：${options['skip-cocos'] ? '是' : '否'}\n`, 'utf8');
-    console.log(`打包日志目录：${logs}`);
+    console.log(`${options['resources-only'] ? '资源构建' : '打包'}日志目录：${logs}`);
     fs.appendFileSync(buildLogPath, `程序版本：${appVersion}\n发布配置：${releaseConfigPath}\n`, 'utf8');
     console.log('开始检查源资源跨 Bundle 引用和多语言默认资源。');
     await run(process.execPath, [dependencyChecker, '--mode', 'source', '--project-root', root, '--tool-config', toolConfigPath],
@@ -170,9 +188,20 @@ async function main() {
     await run(process.execPath, [dependencyChecker, '--mode', 'built', '--output', nativeData, '--tool-config', toolConfigPath],
         root, env, path.join(logs, 'dependency-built.log'));
     fs.appendFileSync(buildLogPath, 'Android 构建产物依赖检查通过。\n', 'utf8');
-    if (tool.android?.prepareScript) {
+    // prepareScript 注入的是 APK 启动清单。资源模式不会生成 APK，且注入后的 main.js
+    // 不能作为差异基准，否则会把刚构建的资源与自身比较。
+    let packagedManifest;
+    if (tool.android?.prepareScript && !options['resources-only']) {
         await run(process.execPath, [path.resolve(root, tool.android.prepareScript), '--platform', 'android', '--data', nativeData],
             root, env, path.join(logs, 'prepare-hot-update.log'));
+        packagedManifest = readInjectedManifest(path.join(nativeData, 'main.js'));
+    }
+    if (options['resources-only']) {
+        const elapsedSeconds = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e9);
+        const elapsed = `${Math.floor(elapsedSeconds / 60)} 分 ${elapsedSeconds % 60} 秒`;
+        fs.appendFileSync(buildLogPath, `Android 资源构建成功。结束时间：${new Date().toISOString()}\n资源构建总耗时：${elapsed}\n`, 'utf8');
+        console.log(`Android 资源构建成功，未运行 Gradle、未生成 APK。总耗时：${elapsed}\n日志目录：${logs}`);
+        return;
     }
     const gradleWrapper = path.join(proj, 'gradlew.bat');
     if (!fs.existsSync(gradleWrapper)) throw new Error(`未找到 Gradle Wrapper，请确认 Android 工程已生成：${proj}`);
@@ -224,6 +253,16 @@ async function main() {
         fs.copyFileSync(apk, target, fs.constants.COPYFILE_EXCL);
         console.log(`APK 输出：${target}`);
         fs.appendFileSync(buildLogPath, `APK 输出：${target}\n`, 'utf8');
+    }
+    if (packagedManifest) {
+        const archivedManifest = path.join(destination, 'project.manifest');
+        const baselineManifest = path.join(root, 'build', 'package-baseline', 'android', appVersion, 'project.manifest');
+        const content = JSON.stringify(packagedManifest, null, 2);
+        fs.writeFileSync(archivedManifest, content, 'utf8');
+        fs.mkdirSync(path.dirname(baselineManifest), { recursive: true });
+        fs.writeFileSync(baselineManifest, content, 'utf8');
+        console.log(`整包资源基准：${baselineManifest}`);
+        fs.appendFileSync(buildLogPath, `整包资源基准：${baselineManifest}\n`, 'utf8');
     }
     const elapsedSeconds = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e9);
     const elapsed = `${Math.floor(elapsedSeconds / 60)} 分 ${elapsedSeconds % 60} 秒`;
