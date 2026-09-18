@@ -63,6 +63,33 @@ function readInjectedManifest(mainPath) {
     return boot.manifest;
 }
 
+function normalizeProjectPath(projectPath) {
+    return path.resolve(projectPath).replace(/[\\/]+$/, '').toLowerCase();
+}
+
+function getRunningCreatorProjects(env) {
+    const command = [
+        "$ErrorActionPreference = 'Stop'",
+        '$utf8 = New-Object System.Text.UTF8Encoding($false)',
+        '[Console]::OutputEncoding = $utf8',
+        '$OutputEncoding = $utf8',
+        "$items = @(Get-CimInstance Win32_Process -Filter \"Name = 'CocosCreator.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '(?:^|\\s)--type=' } | Select-Object -ExpandProperty CommandLine)",
+        'ConvertTo-Json -InputObject $items -Compress',
+    ].join('; ');
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', command],
+        { env, encoding: 'utf8', windowsHide: true });
+    if (result.error || result.status !== 0) {
+        throw new Error('无法检查 Cocos Creator 打开的项目。');
+    }
+
+    const output = result.stdout.trim();
+    const commandLines = output ? JSON.parse(output) : [];
+    return (Array.isArray(commandLines) ? commandLines : [commandLines]).flatMap(commandLine => {
+        const match = String(commandLine).match(/(?:^|\s)--project(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\S+))/i);
+        return match ? [path.resolve(match[1] || match[2] || match[3])] : [];
+    });
+}
+
 async function main() {
     const startedAt = process.hrtime.bigint();
     const options = parseArgs(process.argv.slice(2));
@@ -169,11 +196,15 @@ async function main() {
         root, env, path.join(logs, 'dependency-source.log'));
     fs.appendFileSync(buildLogPath, '源资源依赖检查通过。\n', 'utf8');
     if (!options['skip-cocos']) {
-        const running = spawnSync('powershell.exe', ['-NoProfile', '-Command',
-            "@(Get-Process -Name CocosCreator -ErrorAction SilentlyContinue).Count"],
-        { encoding: 'utf8', windowsHide: true });
-        if (running.error || running.status !== 0) throw new Error('无法检查 Cocos Creator 的运行状态。');
-        if (Number(running.stdout.trim()) > 0) throw new Error('完整构建前，请先保存项目并关闭 Cocos Creator；也可以使用 --skip-cocos，仅编译现有 Android 工程。');
+        const runningCreatorProjects = getRunningCreatorProjects(env);
+        const normalizedRoot = normalizeProjectPath(root);
+        if (runningCreatorProjects.some(project => normalizeProjectPath(project) === normalizedRoot)) {
+            throw new Error(`完整构建前，请先保存并关闭当前项目的 Cocos Creator：${root}`);
+        }
+        const otherProjects = runningCreatorProjects.filter(project => normalizeProjectPath(project) !== normalizedRoot);
+        if (otherProjects.length > 0) {
+            console.log(`检测到其他 Cocos Creator 项目，允许继续构建：${otherProjects.join('、')}`);
+        }
         config.debug = options.mode === 'debug';
         // 运行时配置可能包含签名信息，继续保留在 temp，不随 APK 归档。
         const configDirectory = path.join(root, 'temp', 'builder', 'log', `android-${stamp}`);
