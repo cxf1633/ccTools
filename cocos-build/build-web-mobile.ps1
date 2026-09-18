@@ -26,24 +26,46 @@ trap {
     exit 1
 }
 
-function Get-RunningCreatorMainProcesses {
+function Get-RunningCreatorProjects {
     try {
         $creatorProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'CocosCreator.exe'" -ErrorAction Stop)
-
-        return @($creatorProcesses | Where-Object {
-            $commandLine = [string]$_.CommandLine
-            if (-not [string]::IsNullOrWhiteSpace($commandLine)) {
-                return $commandLine -notmatch '(?:^|\s)--type='
+        $projects = @()
+        foreach ($creatorProcess in $creatorProcesses) {
+            $commandLine = [string]$creatorProcess.CommandLine
+            if ([string]::IsNullOrWhiteSpace($commandLine) -or $commandLine -match '(?:^|\s)--type=') {
+                continue
             }
 
-            $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
-            return $process -and $process.MainWindowHandle -ne 0
-        })
+            $match = [regex]::Match(
+                $commandLine,
+                '(?i)(?:^|\s)--project(?:=|\s+)(?:"([^"]+)"|''([^'']+)''|(\S+))'
+            )
+            if (-not $match.Success) {
+                continue
+            }
+
+            $projectArgument = @($match.Groups[1].Value, $match.Groups[2].Value, $match.Groups[3].Value) |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Select-Object -First 1
+            try {
+                $projectPath = [IO.Path]::GetFullPath($projectArgument).TrimEnd(
+                    [IO.Path]::DirectorySeparatorChar,
+                    [IO.Path]::AltDirectorySeparatorChar
+                )
+            }
+            catch {
+                continue
+            }
+
+            $projects += [PSCustomObject]@{
+                ProcessId = $creatorProcess.ProcessId
+                ProjectPath = $projectPath
+            }
+        }
+        return $projects
     }
     catch {
-        return @(Get-Process -Name 'CocosCreator' -ErrorAction SilentlyContinue | Where-Object {
-            $_.MainWindowHandle -ne 0
-        })
+        throw 'Unable to inspect the projects opened by Cocos Creator.'
     }
 }
 
@@ -136,9 +158,16 @@ else {
     }
 }
 
-$runningCreatorProcesses = @(Get-RunningCreatorMainProcesses)
-if ($runningCreatorProcesses.Count -gt 0) {
-    throw 'Cocos Creator is already running. Save the project and close all Creator windows before starting a command-line build.'
+$runningCreatorProjects = @(Get-RunningCreatorProjects)
+$runningCurrentProject = @($runningCreatorProjects | Where-Object { $_.ProjectPath -ieq $projectRoot })
+if ($runningCurrentProject.Count -gt 0) {
+    throw "The current project is already open in Cocos Creator. Save and close it before building: $projectRoot"
+}
+$otherProjectPaths = @($runningCreatorProjects |
+    Where-Object { $_.ProjectPath -ine $projectRoot } |
+    Select-Object -ExpandProperty ProjectPath -Unique)
+if ($otherProjectPaths.Count -gt 0) {
+    Write-Host "Other Cocos Creator projects are open; continuing: $($otherProjectPaths -join ', ')"
 }
 
 $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
