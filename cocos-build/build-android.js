@@ -300,13 +300,10 @@ async function main() {
     }
     if (packagedManifest) {
         const archivedManifest = path.join(destination, 'project.manifest');
-        const baselineManifest = path.join(root, 'build', 'package-baseline', 'android', 'project.manifest');
         const content = JSON.stringify(packagedManifest, null, 2);
         fs.writeFileSync(archivedManifest, content, 'utf8');
-        fs.mkdirSync(path.dirname(baselineManifest), { recursive: true });
-        fs.writeFileSync(baselineManifest, content, 'utf8');
-        console.log(`整包资源基准：${baselineManifest}`);
-        fs.appendFileSync(buildLogPath, `整包资源基准：${baselineManifest}\n`, 'utf8');
+        console.log(`整包资源清单：${archivedManifest}`);
+        fs.appendFileSync(buildLogPath, `整包资源清单：${archivedManifest}\n`, 'utf8');
     }
     const elapsedSeconds = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e9);
     const elapsed = `${Math.floor(elapsedSeconds / 60)} 分 ${elapsedSeconds % 60} 秒`;
