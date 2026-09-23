@@ -97,7 +97,7 @@ async function main() {
         console.log('用法：node tools/cocos-build/build-android.js [--mode debug|release] [--skip-cocos] [--resources-only] [--check]\n' +
             '       [--project-root 项目目录] [--config 路径] [--tool-config 路径] [--creator 路径] [--java-home 路径] [--log-directory 路径]\n' +
             '项目目录默认为当前工作目录；相对配置路径以项目目录为基准。\n' +
-            '默认：重新构建 Cocos，编译调试版 APK，并复制到 build/apk/<时间戳>。\n' +
+            '默认：重新构建 Cocos，编译调试版 APK，并复制到 build/apk/<版本号>_<时-分>。\n' +
             '--check：仅检查配置和 Java，不构建。--skip-cocos：跳过 Cocos，编译现有 Android 工程。\n' +
             '--resources-only：重新构建 Cocos Android 资源并完成依赖检查，在 APK 清单注入和 Gradle 前停止，不生成 APK。');
         return;
@@ -160,7 +160,9 @@ async function main() {
         return;
     }
     // 北京时间，精确到分钟；Windows 文件夹名不能包含冒号。
-    const minuteStamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+    const beijingTime = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+    const minuteStamp = beijingTime.slice(0, 16).replace('T', '_').replace(':', '-');
+    const apkStamp = `${version}_${beijingTime.slice(11, 16).replace(':', '-')}`;
     const requestedLogDirectory = options['log-directory'] ? path.resolve(root, options['log-directory']) : null;
     if (requestedLogDirectory) {
         const relative = path.relative(path.join(root, 'build'), requestedLogDirectory);
@@ -174,7 +176,9 @@ async function main() {
             ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
             : path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
     fs.mkdirSync(outputDirectory, { recursive: true });
-    let stamp = requestedLogDirectory ? path.basename(requestedLogDirectory) : minuteStamp;
+    let stamp = requestedLogDirectory
+        ? path.basename(requestedLogDirectory)
+        : options['resources-only'] ? minuteStamp : apkStamp;
     let destination;
     for (let sequence = 1; ; sequence++) {
         destination = requestedLogDirectory || path.join(outputDirectory, stamp);
