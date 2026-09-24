@@ -181,9 +181,10 @@ async function main() {
             ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
             : path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
     fs.mkdirSync(outputDirectory, { recursive: true });
-    let stamp = requestedLogDirectory
+    const baseStamp = requestedLogDirectory
         ? path.basename(requestedLogDirectory)
         : options['resources-only'] ? minuteStamp : apkStamp;
+    let stamp = baseStamp;
     let destination;
     for (let sequence = 1; ; sequence++) {
         destination = requestedLogDirectory || path.join(outputDirectory, stamp);
@@ -192,7 +193,7 @@ async function main() {
             break;
         } catch (error) {
             if (error.code !== 'EEXIST' || requestedLogDirectory) throw error;
-            stamp = `${minuteStamp}_${sequence + 1}`;
+            stamp = `${baseStamp}_${sequence + 1}`;
         }
     }
     const logs = destination;
