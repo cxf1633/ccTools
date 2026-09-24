@@ -60,6 +60,11 @@ function readInjectedManifest(mainPath) {
     if (!boot?.manifest?.assets || typeof boot.manifest.assets !== 'object') {
         throw new Error(`APK 启动入口中的包内资源清单无效：${mainPath}`);
     }
+    for (const field of ['packageUrl', 'remoteManifestUrl', 'remoteVersionUrl', 'version']) {
+        if (typeof boot.manifest[field] !== 'string' || !boot.manifest[field]) {
+            throw new Error(`APK 启动入口中的包内资源清单缺少 ${field}：${mainPath}`);
+        }
+    }
     return boot.manifest;
 }
 
@@ -299,11 +304,19 @@ async function main() {
         fs.appendFileSync(buildLogPath, `APK 输出：${target}\n`, 'utf8');
     }
     if (packagedManifest) {
-        const archivedManifest = path.join(destination, 'project.manifest');
-        const content = JSON.stringify(packagedManifest, null, 2);
-        fs.writeFileSync(archivedManifest, content, 'utf8');
-        console.log(`整包资源清单：${archivedManifest}`);
-        fs.appendFileSync(buildLogPath, `整包资源清单：${archivedManifest}\n`, 'utf8');
+        const archivedProjectManifest = path.join(destination, 'project.manifest');
+        const archivedVersionManifest = path.join(destination, 'version.manifest');
+        const versionManifest = {
+            packageUrl: packagedManifest.packageUrl,
+            remoteManifestUrl: packagedManifest.remoteManifestUrl,
+            remoteVersionUrl: packagedManifest.remoteVersionUrl,
+            version: packagedManifest.version,
+        };
+        fs.writeFileSync(archivedProjectManifest, JSON.stringify(packagedManifest, null, 2), 'utf8');
+        fs.writeFileSync(archivedVersionManifest, JSON.stringify(versionManifest, null, 2), 'utf8');
+        console.log(`整包资源清单：${archivedProjectManifest}`);
+        console.log(`整包版本清单：${archivedVersionManifest}`);
+        fs.appendFileSync(buildLogPath, `整包资源清单：${archivedProjectManifest}\n整包版本清单：${archivedVersionManifest}\n`, 'utf8');
     }
     const elapsedSeconds = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e9);
     const elapsed = `${Math.floor(elapsedSeconds / 60)} 分 ${elapsedSeconds % 60} 秒`;
