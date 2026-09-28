@@ -133,7 +133,7 @@ async function main() {
     const creator = options.creator || process.env.COCOS_CREATOR_EXE || tool.creatorExe;
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
-    let javaHome = options['java-home'] || env.JAVA_HOME;
+    let javaHome = options['java-home'] || env.JAVA_HOME || tool.android?.javaHome;
     const studioConfig = path.join(proj, '.gradle', 'config.properties');
     if (!javaHome && fs.existsSync(studioConfig)) {
         const match = fs.readFileSync(studioConfig, 'utf8').match(/^java\.home=(.*)$/m);
