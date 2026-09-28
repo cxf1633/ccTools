@@ -179,7 +179,9 @@ async function main() {
         ? path.dirname(requestedLogDirectory)
         : options['resources-only']
             ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
-            : path.resolve(root, tool.android?.apkOutputDirectory || 'build/apk');
+            : path.resolve(root, options.mode === 'release'
+                ? tool.android?.releaseApkOutputDirectory || tool.android?.apkOutputDirectory || 'build/apk'
+                : tool.android?.apkOutputDirectory || 'build/apk');
     fs.mkdirSync(outputDirectory, { recursive: true });
     const baseStamp = requestedLogDirectory
         ? path.basename(requestedLogDirectory)
