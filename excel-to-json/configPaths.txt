@@ -2,21 +2,17 @@
 # 格式：key=value
 # 支持相对路径，相对于当前工具目录
 
-# 双击 export-excel-json.bat 时批量转换的语言表
-languageInputPath=language
-languageOutputPath=../../assets/framework/language/json
-
 # 框架多语言表
-frameworkI18nInputPath=language/FrameworkI18n.xlsx
-frameworkI18nOutputPath=export/framework
+frameworkI18nInputPath=../../excel/language/FrameworkI18n.xlsx
+frameworkI18nOutputPath=../../excel/export/framework
 
 # 游戏多语言表
-gameI18nInputPath=language/HoldemPokerI18n.xlsx
-gameI18nOutputPath=export/game
+gameI18nInputPath=../../excel/language/HoldemPokerI18n.xlsx
+gameI18nOutputPath=../../excel/export/game
 
 # 配置文件输入路径（目录，支持批量处理）
-configInputPath=configs
+configInputPath=../../excel/configs
 
-# 配置文件输出路径（目录）
-configOutputPath=export
+# 配置文件输出路径（目录）：与输入目录同名，转出的 JSON 放到 export/configs 下
+configOutputPath=../../excel/export/configs
 
