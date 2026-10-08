@@ -34,6 +34,8 @@ function loadConfigPaths() {
 }
 
 const configPaths = loadConfigPaths()
+const languageInputPath = configPaths.languageInputPath
+const languageOutputPath = configPaths.languageOutputPath
 const frameworkI18nInputPath = configPaths.frameworkI18nInputPath
 const frameworkI18nOutputPath = configPaths.frameworkI18nOutputPath
 const gameI18nInputPath = configPaths.gameI18nInputPath
@@ -137,6 +139,39 @@ function convertLanguageTable(label, inputPath, outputPath) {
     const jsonData = parseLanguageExcel(inputPath)
     writeLanguageJson(jsonData, outputPath)
     console.log(`✓ ${label}转换完成: ${path.basename(inputPath)} -> ${outputPath}`)
+}
+
+function convertLanguageDirectory(inputPath, outputPath) {
+    if (!fs.existsSync(inputPath) || !fs.statSync(inputPath).isDirectory()) {
+        throw new Error(`语言表目录不存在: ${inputPath}`)
+    }
+
+    const excelFiles = fs.readdirSync(inputPath)
+        .filter(file => file.toLowerCase().endsWith('.xlsx') && !file.startsWith('~$'))
+        .sort()
+    if (excelFiles.length === 0) {
+        throw new Error(`语言表目录中没有 Excel 文件: ${inputPath}`)
+    }
+
+    const merged = Object.create(null)
+    for (const file of excelFiles) {
+        console.log(`开始处理语言表: ${file}`)
+        const result = parseLanguageExcel(path.join(inputPath, file))
+        for (const [language, entries] of Object.entries(result)) {
+            if (!Object.prototype.hasOwnProperty.call(merged, language)) {
+                merged[language] = Object.create(null)
+            }
+            for (const [key, value] of Object.entries(entries)) {
+                if (Object.prototype.hasOwnProperty.call(merged[language], key)) {
+                    throw new Error(`重复多语言Key: ${key} (${language}) in ${file}`)
+                }
+                merged[language][key] = value
+            }
+        }
+    }
+
+    writeLanguageJson(merged, outputPath)
+    console.log(`已转换 ${excelFiles.length} 个 Excel 文件`)
 }
 
 function parseExcelToJson(filePath) {
@@ -271,10 +306,15 @@ function ensureDirectoryExists(dirPath) {
 }
 
 program
+    .option('--framework-language', '批量转换 language 目录中的 Excel 到框架语言 JSON')
     .version(version, '-V, --version')
     .usage('[options]')
     .action(() => {
         try {
+            if (program.opts().frameworkLanguage) {
+                convertLanguageDirectory(languageInputPath, languageOutputPath)
+                return
+            }
             console.log('开始执行Excel转JSON转换...')
             console.log('当前工作目录:', process.cwd())
             console.log('配置路径:')
