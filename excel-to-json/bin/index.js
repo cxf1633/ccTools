@@ -17,7 +17,7 @@ function loadConfigPaths() {
     const config = {}
 
     console.log('工具根目录:', toolRoot)
-    
+
     configContent.split('\n').forEach(line => {
         line = line.trim()
         if (line && !line.startsWith('#')) {
@@ -29,7 +29,7 @@ function loadConfigPaths() {
             }
         }
     })
-    
+
     return config
 }
 
@@ -132,7 +132,8 @@ function writeLanguageJson(result, outputPath) {
 
 function convertLanguageTable(label, inputPath, outputPath) {
     if (!fs.existsSync(inputPath)) {
-        throw new Error(`${label}不存在: ${inputPath}`)
+        console.warn(`警告：${label}不存在，已跳过: ${inputPath}`)
+        return
     }
 
     console.log(`开始处理${label}: ${inputPath}`)
@@ -217,7 +218,7 @@ function parseExcelToJson(filePath) {
     // 从第三行开始处理数据（跳过列名行和备注行）
     for (let rowIndex = 2; rowIndex < sheetData.length; rowIndex++) {
         const row = sheetData[rowIndex]
-        
+
         // 跳过空行
         if (!row || row.length === 0) continue
 
@@ -324,30 +325,30 @@ program
             console.log('  gameI18nOutputPath:', gameI18nOutputPath)
             console.log('  configInputPath:', configInputPath)
             console.log('  configOutputPath:', configOutputPath)
-            
+
             // 框架与游戏语言表分别输出，避免同名语言 JSON 互相覆盖。
             console.log('开始处理多语言表...')
             convertLanguageTable('框架多语言表', frameworkI18nInputPath, frameworkI18nOutputPath)
             convertLanguageTable('游戏多语言表', gameI18nInputPath, gameI18nOutputPath)
             console.log('多语言表处理完成')
 
-            
+
             // 批量处理configInputPath目录下的所有Excel文件
             if (fs.existsSync(configInputPath)) {
                 if (fs.statSync(configInputPath).isDirectory()) {
                     // 如果是目录，批量处理所有xlsx文件
                     const files = fs.readdirSync(configInputPath)
                     const excelFiles = files.filter(file => file.endsWith('.xlsx'))
-                    
+
                     if (excelFiles.length === 0) {
                         console.log(`目录 ${configInputPath} 中没有找到Excel文件`)
                     } else {
                         console.log(`找到 ${excelFiles.length} 个Excel文件，开始批量转换...`)
-                        
+
                         excelFiles.forEach(file => {
                             const inputFile = path.join(configInputPath, file)
                             const outputFile = path.join(configOutputPath, file.replace('.xlsx', '.json'))
-                            
+
                             try {
                                 const jsonData = parseExcelToJson(inputFile)
                                 // 确保输出目录存在
@@ -360,7 +361,7 @@ program
                                 console.error(`✗ 转换失败: ${file}`, error.message)
                             }
                         })
-                        
+
                         console.log(`批量转换完成，输出目录: ${configOutputPath}`)
                     }
                 } else {

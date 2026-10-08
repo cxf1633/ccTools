@@ -1,0 +1,5 @@
+# 路径可以使用相对于项目根目录的相对路径，也可以填写绝对路径。
+
+# 游戏语言：源文件 game/<语言>.json 会复制到目标目录的 <语言>/<语言>.json。
+gameSourceDir=E:\Work\yatelan\策划\十三德扑\配置表\多语言表\export\game
+gameTargetDir=assets/languages
