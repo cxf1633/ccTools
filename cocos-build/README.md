@@ -5,17 +5,17 @@
 `build-android.js` 保存共享打包实现，项目入口和配置保留在各自主仓库。直接调用示例：
 
 ```powershell
-node tools/cocos-build/build-android.js --project-root . --config cocos-build/build-config-android.json --tool-config cocos-build/tool-config.json --check
-node tools/cocos-build/build-android.js --project-root . --config cocos-build/build-config-android.json --tool-config cocos-build/tool-config.json --resources-only
+node tools/cocos-build/build-android.js --project-root . --config cocos-build/debug/build-config-android.json --tool-config cocos-build/config/tool-config.json --check
+node tools/cocos-build/build-android.js --project-root . --config cocos-build/debug/build-config-android.json --tool-config cocos-build/config/tool-config.json --resources-only
 ```
 
 `--project-root` 默认为当前工作目录，两个配置路径相对于项目目录解析。项目 BAT 应传入绝对路径，以支持从任意目录启动。
 
-Android 支持 `--mode debug|release`、`--skip-cocos`、`--resources-only`、`--creator`、`--java-home`、`--log-directory`。`--resources-only` 会重新构建 Cocos Android 资源并完成构建前后的依赖检查，在 Gradle 前停止，不生成 APK。`--log-directory` 可指定项目 `build/` 下尚不存在的本次日志目录。源码和构建产物依赖检查均使用同目录的 `check-bundle-dependencies.js`。
+Android 支持 `--mode debug|release`、`--skip-cocos`、`--resources-only`、`--creator`、`--java-home`、`--log-directory`。`--resources-only` 会重新构建 Cocos Android 资源并完成构建前后的依赖检查，在 Gradle 前停止，不生成 APK。`--log-directory` 可指定当前模式 `build-debug/` 或 `build-release/` 下尚不存在的本次日志目录。源码和构建产物依赖检查均使用同目录的 `check-bundle-dependencies.js`。
 
-项目通过 `tool-config.json` 的 `android.releaseConfig` 指向发布配置，脚本读取其中 `platforms.android.version`，通过 Gradle init script 的 AGP `finalizeDsl` 注入 `versionName`，构建后校验 APK 元数据版本一致；不修改 `versionCode`，不自动递增版本。`--check` 也会检查版本。
+项目按构建模式读取 `cocos-build/<模式>/version-config.json`，脚本读取其中 `platforms.android.version`，通过 Gradle init script 的 AGP `finalizeDsl` 注入 `versionName`，构建后校验 APK 元数据版本一致；不修改 `versionCode`，不自动递增版本。`--check` 也会检查版本。
 
-项目 `tool-config.json` 可设置 `android.apkNameTemplate` 和 `android.apkOutputDirectory`：模板支持 `{index}`（从 1 开始）、`{version}`、`{originalName}`（含 .apk）、`{mode}`；默认模板为 `{index}-v{version}-{originalName}`。输出目录默认为项目下的 `build/apk`，每次构建创建北京时间精确到分钟的子目录，同分钟重复构建自动加序号。APK、日志和耗时记录都保存在该目录。
+项目 `tool-config.json` 可设置 `android.apkNameTemplate` 和 `android.apkOutputDirectory`：模板支持 `{index}`（从 1 开始）、`{version}`、`{originalName}`（含 .apk）、`{mode}`；默认模板为 `{index}-v{version}-{originalName}`。输出目录默认为项目下的 `build-<模式>/apk`，每次构建创建纯版本号子目录（例如 `0.1.0`），同版本重复构建自动加 `_2`、`_3` 等序号。APK、日志和耗时记录都保存在该目录。
 
 共享实现属于 `tools` 子模块；提交时先提交子模块改动，再在主仓库提交入口、配置和子模块引用。
 
@@ -26,10 +26,10 @@ Android 支持 `--mode debug|release`、`--skip-cocos`、`--resources-only`、`-
 项目通过主仓库中的 BAT 入口执行 Web Mobile 构建：
 
 ```powershell
-.\cocos-build\打网页包.bat
+.\cocos-build\web\生成网页包.bat
 ```
 
-构建规则由项目主仓库的 `cocos-build/tool-config.json` 配置，例如：
+构建规则由项目主仓库的 `cocos-build/config/tool-config.json` 配置，例如：
 
 ```json
 {
@@ -72,7 +72,7 @@ Android 支持 `--mode debug|release`、`--skip-cocos`、`--resources-only`、`-
 
 ```powershell
 $env:COCOS_CREATOR_EXE = 'D:\Cocos\Creator\3.8.8\CocosCreator.exe'
-.\cocos-build\打网页包.bat
+.\cocos-build\web\生成网页包.bat
 ```
 
 也可以直接向 PowerShell 工具传入 `-CreatorExe`；优先级为命令行参数、`COCOS_CREATOR_EXE` 环境变量、`tool-config.json`。
@@ -101,9 +101,11 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 调查现有依赖问题期间，如需临时跳过源码 UUID 和构建产物 `deps` 两层检查并产出构建包，可执行：
 
 ```powershell
-.\cocos-build\打网页包.bat -SkipBundleDependencyCheck
+.\cocos-build\web\生成网页包.bat -SkipBundleDependencyCheck
 ```
 
-项目构建配置由主仓库的 `cocos-build/web-mobile.json` 维护。构建面板选项或参与构建的场景发生变化时，应明确更新该文件，不要直接使用编辑器生成的 `profiles/v2/packages/builder.json` 作为命令行配置。
+项目构建配置由主仓库的 `cocos-build/web/web-mobile.json` 维护。构建面板选项或参与构建的场景发生变化时，应明确更新该文件，不要直接使用编辑器生成的 `profiles/v2/packages/builder.json` 作为命令行配置。
 
 各配置文件的逐字段说明见主仓库的 `cocos-build/README.md`。
+
+Android 版本按 `--mode` 读取 `cocos-build/debug/version-config.json` 或 `cocos-build/release/version-config.json`，APK 启动清单注入也使用同一模式。

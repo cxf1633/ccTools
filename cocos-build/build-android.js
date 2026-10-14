@@ -8,16 +8,19 @@ const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFE
 let buildLogPath;
 
 function parseArgs(args) {
-    const options = { mode: 'debug', 'project-root': process.cwd(), config: 'cocos-build/build-config-android.json', 'tool-config': 'cocos-build/tool-config.json' };
+    const options = { mode: 'debug', 'project-root': process.cwd(), 'tool-config': 'cocos-build/config/tool-config.json' };
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
-        if (['--help', '--check', '--skip-cocos', '--resources-only'].includes(arg)) options[arg.slice(2)] = true;
+        if (['--help', '--check', '--skip-cocos', '--resources-only', '--open-output'].includes(arg)) options[arg.slice(2)] = true;
         else if (['--mode', '--project-root', '--config', '--tool-config', '--creator', '--java-home', '--log-directory'].includes(arg)) {
             if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`参数缺少值：${arg}`);
             options[arg.slice(2)] = args[++i];
         } else throw new Error(`未知参数：${arg}`);
     }
     if (!['debug', 'release'].includes(options.mode)) throw new Error('--mode 只能设置为 debug（调试）或 release（发布）');
+    options.config ||= options.mode === 'debug'
+        ? 'cocos-build/debug/build-config-android.json'
+        : 'cocos-build/local/build-config-android-release.json';
     if (options['resources-only'] && options['skip-cocos']) throw new Error('--resources-only 不能与 --skip-cocos 同时使用。');
     return options;
 }
@@ -102,7 +105,7 @@ async function main() {
         console.log('用法：node tools/cocos-build/build-android.js [--mode debug|release] [--skip-cocos] [--resources-only] [--check]\n' +
             '       [--project-root 项目目录] [--config 路径] [--tool-config 路径] [--creator 路径] [--java-home 路径] [--log-directory 路径]\n' +
             '项目目录默认为当前工作目录；相对配置路径以项目目录为基准。\n' +
-            '默认：重新构建 Cocos，编译调试版 APK，并复制到 build/apk/<版本号>_<时-分>。\n' +
+            '默认：重新构建 Cocos，编译调试版 APK，并复制到 build-debug/apk/<版本号>。\n' +
             '--check：仅检查配置和 Java，不构建。--skip-cocos：跳过 Cocos，编译现有 Android 工程。\n' +
             '--resources-only：重新构建 Cocos Android 资源并完成依赖检查，在 APK 清单注入和 Gradle 前停止，不生成 APK。');
         return;
@@ -113,11 +116,11 @@ async function main() {
     const config = readJson(configPath);
     const toolConfigPath = path.resolve(root, options['tool-config']);
     const tool = readJson(toolConfigPath);
-    const releaseConfigPath = path.resolve(root, tool.android?.releaseConfig || 'cocos-build/release-config.json');
-    const releaseConfig = readJson(releaseConfigPath);
-    const version = releaseConfig.platforms?.android?.version;
+    const versionConfigPath = path.join(root, 'cocos-build', options.mode, 'version-config.json');
+    const versionConfig = readJson(versionConfigPath);
+    const version = versionConfig.platforms?.android?.version;
     if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version || '')) {
-        throw new Error(`版本格式无效，请在 ${releaseConfigPath} 的 platforms.android.version 填写三段数字，例如 0.1.15。`);
+        throw new Error(`版本格式无效，请在 ${versionConfigPath} 的 platforms.android.version 填写三段数字，例如 0.1.15。`);
     }
     const apkNameTemplate = tool.android?.apkNameTemplate || '{index}-v{version}-{originalName}';
     if (typeof apkNameTemplate !== 'string' || /\{(?!index\}|version\}|originalName\}|mode\})/.test(apkNameTemplate)) {
@@ -131,7 +134,7 @@ async function main() {
     const output = path.resolve(root, buildBase, config.outputName);
     const proj = path.join(output, 'proj');
     const creator = options.creator || process.env.COCOS_CREATOR_EXE || tool.creatorExe;
-    const env = { ...process.env };
+    const env = { ...process.env, THIRTEEN_BUILD_MODE: options.mode };
     delete env.ELECTRON_RUN_AS_NODE;
     let javaHome = options['java-home'] || env.JAVA_HOME || tool.android?.javaHome;
     const studioConfig = path.join(proj, '.gradle', 'config.properties');
@@ -156,7 +159,7 @@ async function main() {
         throw new Error(`请先通过 Cocos 构建生成 Android 工程：${proj}`);
     }
     console.log(`构建模式：${options.mode === 'debug' ? '调试版（Debug）' : '发布版（Release）'}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}`);
-    console.log(`版本：${version}（${releaseConfigPath}）`);
+    console.log(`版本：${version}（${versionConfigPath}）`);
     if (options.mode === 'release' && config.packages?.android?.useDebugKeystore) {
         console.log('提示：当前配置使用 Cocos 调试证书，正式发布前请配置正式签名证书。');
     }
@@ -167,21 +170,21 @@ async function main() {
     // 北京时间，精确到分钟；Windows 文件夹名不能包含冒号。
     const beijingTime = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
     const minuteStamp = beijingTime.slice(0, 16).replace('T', '_').replace(':', '-');
-    const apkStamp = `${version}_${beijingTime.slice(11, 16).replace(':', '-')}`;
+    const apkStamp = version;
     const requestedLogDirectory = options['log-directory'] ? path.resolve(root, options['log-directory']) : null;
     if (requestedLogDirectory) {
-        const relative = path.relative(path.join(root, 'build'), requestedLogDirectory);
+        const relative = path.relative(path.join(root, `build-${options.mode}`), requestedLogDirectory);
         if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
-            throw new Error('--log-directory 必须是项目 build/ 下的新目录。');
+            throw new Error('--log-directory 必须是当前模式 build-debug/ 或 build-release/ 下的新目录。');
         }
     }
     const outputDirectory = requestedLogDirectory
         ? path.dirname(requestedLogDirectory)
         : options['resources-only']
-            ? path.resolve(root, tool.android?.resourceBuildLogDirectory || 'build/hot-update-build')
+            ? path.resolve(root, tool.android?.resourceBuildLogDirectory || `build-${options.mode}/hot-update-build`)
             : path.resolve(root, options.mode === 'release'
-                ? tool.android?.releaseApkOutputDirectory || tool.android?.apkOutputDirectory || 'build/apk'
-                : tool.android?.apkOutputDirectory || 'build/apk');
+                ? tool.android?.releaseApkOutputDirectory || tool.android?.apkOutputDirectory || `build-${options.mode}/apk`
+                : tool.android?.apkOutputDirectory || `build-${options.mode}/apk`);
     fs.mkdirSync(outputDirectory, { recursive: true });
     const baseStamp = requestedLogDirectory
         ? path.basename(requestedLogDirectory)
@@ -202,7 +205,7 @@ async function main() {
     buildLogPath = path.join(logs, 'build.log');
     fs.writeFileSync(buildLogPath, `开始时间：${new Date().toISOString()}\n构建模式：${options.mode}\n配置文件：${configPath}\nAndroid 工程：${proj}\nJava 路径：${java}\n跳过 Cocos：${options['skip-cocos'] ? '是' : '否'}\n`, 'utf8');
     console.log(`${options['resources-only'] ? '资源构建' : '打包'}日志目录：${logs}`);
-    fs.appendFileSync(buildLogPath, `版本：${version}\n发布配置：${releaseConfigPath}\n`, 'utf8');
+    fs.appendFileSync(buildLogPath, `版本：${version}\n发布配置：${versionConfigPath}\n`, 'utf8');
     console.log('开始检查源资源跨 Bundle 引用和多语言默认资源。');
     await run(process.execPath, [dependencyChecker, '--mode', 'source', '--project-root', root, '--tool-config', toolConfigPath],
         root, env, path.join(logs, 'dependency-source.log'));
@@ -325,6 +328,11 @@ async function main() {
     const elapsed = `${Math.floor(elapsedSeconds / 60)} 分 ${elapsedSeconds % 60} 秒`;
     fs.appendFileSync(buildLogPath, `打包成功。结束时间：${new Date().toISOString()}\n打包总耗时：${elapsed}\n`, 'utf8');
     console.log(`打包成功。打包总耗时：${elapsed}\n日志目录：${logs}`);
+    if (options['open-output'] && !process.env.CI && process.platform === 'win32') {
+        const explorer = spawn('explorer.exe', [destination], { detached: true, stdio: 'ignore' });
+        explorer.on('error', error => console.warn(`无法打开 APK 输出目录：${error.message}\n目录：${destination}`));
+        explorer.unref();
+    }
 }
 
 main().catch(error => {
