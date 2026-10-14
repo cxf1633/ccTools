@@ -75,7 +75,7 @@ $env:COCOS_CREATOR_EXE = 'D:\Cocos\Creator\3.8.8\CocosCreator.exe'
 .\cocos-build\web\生成网页包.bat
 ```
 
-也可以直接向 PowerShell 工具传入 `-CreatorExe`；优先级为命令行参数、`COCOS_CREATOR_EXE` 环境变量、`tool-config.json`。
+也可以直接向 Node.js 工具传入 `--creator`；优先级为命令行参数、`COCOS_CREATOR_EXE` 环境变量、`tool-config.json`。
 
 构建产物目录根据项目构建配置中的 `buildPath` 和 `outputName` 自动推导。命令行日志输出到 `temp/builder/log/<outputName>-cli.log`。
 
@@ -101,7 +101,7 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 调查现有依赖问题期间，如需临时跳过源码 UUID 和构建产物 `deps` 两层检查并产出构建包，可执行：
 
 ```powershell
-.\cocos-build\web\生成网页包.bat -SkipBundleDependencyCheck
+.\cocos-build\web\生成网页包.bat --skip-bundle-dependency-check
 ```
 
 项目构建配置由主仓库的 `cocos-build/web/web-mobile.json` 维护。构建面板选项或参与构建的场景发生变化时，应明确更新该文件，不要直接使用编辑器生成的 `profiles/v2/packages/builder.json` 作为命令行配置。
@@ -109,3 +109,5 @@ Bundle 检查由 `check-bundle-dependencies.js` 执行，因此运行环境需�
 各配置文件的逐字段说明见主仓库的 `cocos-build/README.md`。
 
 Android 版本按 `--mode` 读取 `cocos-build/debug/version-config.json` 或 `cocos-build/release/version-config.json`，APK 启动清单注入也使用同一模式。
+
+Web Mobile 工具使用 Node.js：`node tools/cocos-build/build-web-mobile.js --check` 仅检查配置，`node tools/cocos-build/build-web-mobile.js` 执行构建。日志保存在构建根目录的 `log/`，包括 Creator 输出和构建前后依赖检查日志。
