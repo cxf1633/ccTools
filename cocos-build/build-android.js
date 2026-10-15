@@ -20,7 +20,7 @@ function parseArgs(args) {
     if (!['debug', 'release'].includes(options.mode)) throw new Error('--mode 只能设置为 debug（调试）或 release（发布）');
     options.config ||= options.mode === 'debug'
         ? 'cocos-build/debug/build-config-android.json'
-        : 'cocos-build/local/build-config-android-release.json';
+        : 'cocos-build/release/build-config-android-release.json';
     if (options['resources-only'] && options['skip-cocos']) throw new Error('--resources-only 不能与 --skip-cocos 同时使用。');
     return options;
 }
