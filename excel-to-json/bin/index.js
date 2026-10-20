@@ -109,6 +109,7 @@ const packageJsonData = (sheet, options, sourceName = '') => {
 function writeLanguageJson(result, outputPath) {
     ensureDirectoryExists(outputPath)
 
+    const producedNames = []
     for (const key in result) {
         if (!key) {
             continue
@@ -120,24 +121,82 @@ function writeLanguageJson(result, outputPath) {
                 `${outputPath}/${key}.json`,
                 JSON.stringify(element, null, 4)
             )
+            producedNames.push(`${key}.json`)
         }
     }
 
     console.log(
         `language excel to json finished, output path is ${outputPath}`
     )
+
+    // 产出清单交给调用方，用来把输出目录里“来源已经没有”的旧文件清掉
+    return producedNames
+}
+
+/**
+ * 让输出目录只保留本次产出的文件：目录里不在产出清单里的**顶层文件**会被删掉并打印出来，
+ * 保证输出目录和来源 excel 一一对应，不会残留策划已经删掉或改成服务端专用的旧表。
+ *
+ * 这里必须用 fs.unlinkSync —— 工程路径含中文（...\约局DP\...）时 fs.rmSync 会静默失效
+ * （不抛异常也不删文件），历史上用它踩过“日志提示删了、文件还在”的坑。
+ * 子目录不动，只清顶层文件；发现子目录会提示出来。
+ */
+function cleanOutputDir(outputDir, producedNames, label) {
+    if (!fs.existsSync(outputDir)) {
+        return []
+    }
+
+    const produced = new Set(producedNames)
+    const entries = fs.readdirSync(outputDir, { withFileTypes: true })
+
+    const subDirs = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    if (subDirs.length > 0) {
+        console.warn(`⚠ ${label}输出目录里存在子目录（不清理，请自行确认）：${subDirs.join('、')}`)
+    }
+
+    const removedNames = []
+    entries
+        .filter((entry) => entry.isFile() && !produced.has(entry.name))
+        .map((entry) => entry.name)
+        .sort((left, right) => left.localeCompare(right))
+        .forEach((fileName) => {
+            const filePath = path.join(outputDir, fileName)
+            try {
+                fs.unlinkSync(filePath)
+            } catch (error) {
+                if (error.code !== 'ENOENT') {
+                    console.error(`✗ 删除失败: ${fileName}（${error.message}）`)
+                    return
+                }
+            }
+
+            if (fs.existsSync(filePath)) {
+                console.error(`✗ 删除后文件仍然存在: ${fileName}`)
+                return
+            }
+
+            console.log(`[删除] ${fileName}（${label}来源里已没有这张表）`)
+            removedNames.push(fileName)
+        })
+
+    return removedNames
 }
 
 function convertLanguageTable(label, inputPath, outputPath) {
     if (!fs.existsSync(inputPath)) {
-		console.warn(`警告：${label}不存在，已跳过: ${inputPath}`)
-        return
+        console.warn(`警告：${label}不存在，已跳过: ${inputPath}`)
+        return undefined
     }
 
     console.log(`开始处理${label}: ${inputPath}`)
     const jsonData = parseLanguageExcel(inputPath)
-    writeLanguageJson(jsonData, outputPath)
+    const producedNames = writeLanguageJson(jsonData, outputPath)
     console.log(`✓ ${label}转换完成: ${path.basename(inputPath)} -> ${outputPath}`)
+
+    // 产出清单交给调用方做输出目录清理（输入缺失时不返回，避免误删）
+    return producedNames
 }
 
 /** 配置表类型行中允许出现的数据类型关键字（用于定位类型行，反推列名行与数据起始行）。 */
@@ -211,7 +270,7 @@ function parseExcelToJson(filePath) {
 
     // ===== 表头识别（按“类型行”锚定，兼容几种表头写法） =====
     // 常见结构（方括号为可选，行数各表略有差异）：
-    //   [标题行 / 中文名列]        <- 如 item.xlsx 的“说明”“编号KEY…”行
+    //   [标题行 / 中文名列]        <- 如 t_config_item.xlsx 的“说明”“编号KEY…”行
     //   列名行                     <- 真实字段名；##var 风格表的 A 列是 "##var"
     //   类型行                     <- int / string / array / duration …（用它反推列名行）
     //   [描述行]                   <- 中文说明，A 列通常为 "##"
@@ -347,6 +406,12 @@ function parseExcelToJson(filePath) {
         throw new Error('没有找到有效的列（所有列都被跳过或为空）')
     }
 
+    // 除 key 列外没有任何 client 字段（整表都是服务端字段）时不产出 JSON：
+    // 这种表产出的只会是一行行空对象，客户端也用不到。返回 null 让调用方跳过它。
+    if (validColumns.length <= 1) {
+        return null
+    }
+
     // 初始化结果对象
     const result = {}
 
@@ -458,8 +523,15 @@ program
             
             // 框架与游戏语言表分别输出，避免同名语言 JSON 互相覆盖。
             console.log('开始处理多语言表...')
-            convertLanguageTable('框架多语言表', frameworkI18nInputPath, frameworkI18nOutputPath)
-            convertLanguageTable('游戏多语言表', gameI18nInputPath, gameI18nOutputPath)
+            const frameworkProduced = convertLanguageTable('框架多语言表', frameworkI18nInputPath, frameworkI18nOutputPath)
+            if (frameworkProduced && frameworkProduced.length > 0) {
+                cleanOutputDir(frameworkI18nOutputPath, frameworkProduced, '框架多语言')
+            }
+
+            const gameProduced = convertLanguageTable('游戏多语言表', gameI18nInputPath, gameI18nOutputPath)
+            if (gameProduced && gameProduced.length > 0) {
+                cleanOutputDir(gameI18nOutputPath, gameProduced, '游戏多语言')
+            }
             console.log('多语言表处理完成')
 
             
@@ -468,31 +540,55 @@ program
                 if (fs.statSync(configInputPath).isDirectory()) {
                     // 如果是目录，批量处理所有xlsx文件
                     const files = fs.readdirSync(configInputPath)
-                    const excelFiles = files.filter(file => file.endsWith('.xlsx'))
+                    // 跳过 Excel/WPS 打开表格时生成的 ~$ 锁文件：它也以 .xlsx 结尾，
+                    // 但内容是垃圾，之前会被当普通表解析
+                    const excelFiles = files.filter(file => file.endsWith('.xlsx') && !file.startsWith('~$'))
+                    const lockedFiles = files.filter(file => file.endsWith('.xlsx') && file.startsWith('~$'))
+                    if (lockedFiles.length > 0) {
+                        console.log(`跳过 ${lockedFiles.length} 个 ~$ 锁文件（表格正被 Excel/WPS 打开）：${lockedFiles.join('、')}`)
+                    }
                     
                     if (excelFiles.length === 0) {
                         console.log(`目录 ${configInputPath} 中没有找到Excel文件`)
                     } else {
                         console.log(`找到 ${excelFiles.length} 个Excel文件，开始批量转换...`)
+
+                        // 本次真正产出的 JSON 文件名：只有这些会留在输出目录里
+                        const producedNames = []
                         
                         excelFiles.forEach(file => {
+                            const outputName = file.replace('.xlsx', '.json')
                             const inputFile = path.join(configInputPath, file)
-                            const outputFile = path.join(configOutputPath, file.replace('.xlsx', '.json'))
-                            
+                            const outputFile = path.join(configOutputPath, outputName)
+
                             try {
                                 const jsonData = parseExcelToJson(inputFile)
+                                // 没有任何 client 字段的表不产出 JSON（免得留下一份全是空对象的文件），
+                                // 它以前产出过的旧文件会被下面的清理删掉
+                                if (jsonData === null) {
+                                    console.log(`⊘ 跳过: ${file}（没有任何 client 字段，不产出 JSON）`)
+                                    return
+                                }
+
                                 // 确保输出目录存在
                                 const outputDir = path.dirname(outputFile)
                                 ensureDirectoryExists(outputDir)
                                 // 将结果写入JSON文件
                                 writeFileSync(outputFile, JSON.stringify(jsonData, null, 4))
-                                console.log(`✓ 转换完成: ${file} -> ${path.basename(outputFile)}`)
+                                producedNames.push(outputName)
+                                console.log(`✓ 转换完成: ${file} -> ${outputName}`)
                             } catch (error) {
                                 console.error(`✗ 转换失败: ${file}`, error.message)
                             }
                         })
-                        
-                        console.log(`批量转换完成，输出目录: ${configOutputPath}`)
+
+                        // 输出目录只保留本次产出：来源已删掉 / 改成服务端专用的旧 JSON 一并清掉并打印
+                        const removedNames = cleanOutputDir(configOutputPath, producedNames, '配置表')
+                        if (producedNames.length === 0 && removedNames.length > 0) {
+                            console.warn('⚠ 本次没有产出任何配置表 JSON，输出目录已被清空（请确认 excel 底部的 client 字段标记）')
+                        }
+
+                        console.log(`批量转换完成：产出 ${producedNames.length} 个，清理无来源旧文件 ${removedNames.length} 个，输出目录: ${configOutputPath}`)
                     }
                 } else {
                     console.log(`警告: ${configInputPath} 不是目录，跳过处理`)
