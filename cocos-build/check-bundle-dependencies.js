@@ -330,7 +330,7 @@ function collectSerializedUuidReferences(sourcePath, parsedSource) {
     return references;
 }
 
-function collectLanguageDefaultAssetViolations(sourcePath, parsedSource, uuidIndex, defaultLanguageBundle) {
+function collectLanguageDefaultAssetViolations(sourcePath, parsedSource, uuidIndex, defaultLanguageBundle, sourceBundle) {
     if (!defaultLanguageBundle || !Array.isArray(parsedSource.serialized)) {
         return [];
     }
@@ -391,7 +391,7 @@ function collectLanguageDefaultAssetViolations(sourcePath, parsedSource, uuidInd
         }
 
         const target = uuidIndex.get(resourceUuid);
-        if (target && target.bundle === defaultLanguageBundle) {
+        if (target && (target.bundle === defaultLanguageBundle || target.bundle === sourceBundle)) {
             continue;
         }
 
@@ -439,16 +439,17 @@ function checkSource(projectRoot, policy) {
     const languageDefaultViolations = [];
     for (const sourcePath of allFiles.filter((filePath) => SERIALIZED_ASSET_EXTENSIONS.has(path.extname(filePath).toLowerCase()))) {
         const parsedSource = parseSerializedSource(sourcePath);
+        const sourceBundle = getOwningBundle(sourcePath, bundleRoots);
         if (LANGUAGE_DEFAULT_ASSET_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) {
             languageDefaultViolations.push(...collectLanguageDefaultAssetViolations(
                 sourcePath,
                 parsedSource,
                 uuidIndex,
                 policy.defaultLanguageBundle,
+                sourceBundle,
             ));
         }
 
-        const sourceBundle = getOwningBundle(sourcePath, bundleRoots);
         if (!sourceBundle) {
             continue;
         }
@@ -527,12 +528,12 @@ function checkSource(projectRoot, policy) {
 
     if (languageDefaultViolations.length === 0) {
         if (policy.defaultLanguageBundle) {
-            console.log(`多语言默认资源检查通过：LanguageSprite、LanguageSpine 的默认资源为空或来自 ${policy.defaultLanguageBundle}。`);
+            console.log(`多语言默认资源检查通过：LanguageSprite、LanguageSpine 的默认资源为空，或来自所属 Bundle / 公共语言 Bundle「${policy.defaultLanguageBundle}」。`);
         }
     } else {
         console.error('');
         console.error('【多语言默认资源检查失败】');
-        console.error(`原因：LanguageSprite、LanguageSpine 的默认资源必须为空，或来自默认中文 Bundle「${policy.defaultLanguageBundle}」。`);
+        console.error(`原因：LanguageSprite、LanguageSpine 的默认资源必须为空，或来自所属 Bundle / 公共语言 Bundle「${policy.defaultLanguageBundle}」。`);
 
         for (const item of languageDefaultViolations) {
             const targetAsset = item.targetAsset
@@ -545,7 +546,7 @@ function checkSource(projectRoot, policy) {
             console.error(`资源标识：${item.dataID || '<空>'}`);
             console.error(`当前资源：${targetAsset}`);
             console.error(`当前 Bundle：${item.targetBundle || '<无法识别>'}`);
-            console.error(`正确要求：默认资源请留空，或改用 ${policy.defaultLanguageBundle} 中的同名资源。`);
+            console.error(`正确要求：默认资源请留空，或改用所属 Bundle / ${policy.defaultLanguageBundle} 中的同名中文资源。`);
         }
 
         console.error('');
