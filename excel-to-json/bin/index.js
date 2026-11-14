@@ -34,8 +34,6 @@ function loadConfigPaths() {
 }
 
 const configPaths = loadConfigPaths()
-const frameworkI18nInputPath = configPaths.frameworkI18nInputPath
-const frameworkI18nOutputPath = configPaths.frameworkI18nOutputPath
 const gameI18nInputPath = configPaths.gameI18nInputPath
 const gameI18nOutputPath = configPaths.gameI18nOutputPath
 const configInputPath = configPaths.configInputPath
@@ -197,6 +195,54 @@ function convertLanguageTable(label, inputPath, outputPath) {
 
     // 产出清单交给调用方做输出目录清理（输入缺失时不返回，避免误删）
     return producedNames
+}
+
+// 每张语言表独立输出到以 Excel 文件名命名的目录，避免同名语言 JSON 互相覆盖。
+function convertLanguageDirectory(inputPath, outputPath) {
+    if (!inputPath || !outputPath) {
+        throw new Error('请在 configPaths.txt 中配置 gameI18nInputPath 和 gameI18nOutputPath')
+    }
+    if (!fs.existsSync(inputPath) || !fs.statSync(inputPath).isDirectory()) {
+        throw new Error(`多语言表输入目录不存在或不是目录: ${inputPath}`)
+    }
+
+    const extensions = new Set(['.xlsx', '.xls', '.xlsm', '.xlsb'])
+    const excelFiles = fs.readdirSync(inputPath, { withFileTypes: true })
+        .filter(entry => entry.isFile() && !entry.name.startsWith('~$') &&
+            extensions.has(path.extname(entry.name).toLowerCase()))
+        .map(entry => entry.name)
+        .sort((left, right) => left.localeCompare(right))
+
+    // 不同扩展名的同名表也不能共用一个输出目录。
+    const outputNames = new Set()
+    for (const fileName of excelFiles) {
+        const outputName = path.parse(fileName).name.toLowerCase()
+        if (outputNames.has(outputName)) {
+            throw new Error(`多语言表文件名重复（忽略扩展名）: ${fileName}`)
+        }
+        outputNames.add(outputName)
+    }
+
+    let failedCount = 0
+    for (const fileName of excelFiles) {
+        const tableOutputPath = path.join(outputPath, path.parse(fileName).name)
+        try {
+            const producedNames = convertLanguageTable(
+                '多语言表', path.join(inputPath, fileName), tableOutputPath
+            )
+            if (producedNames && producedNames.length > 0) {
+                cleanOutputDir(tableOutputPath, producedNames, fileName)
+            }
+        } catch (error) {
+            failedCount++
+            console.error(`✗ 多语言表转换失败: ${fileName}`, error.message)
+        }
+    }
+
+    console.log(`多语言表批量转换完成：成功 ${excelFiles.length - failedCount} 个，失败 ${failedCount} 个，输出目录: ${outputPath}`)
+    if (failedCount > 0) {
+        throw new Error(`${failedCount} 张多语言表转换失败，请检查上方错误`)
+    }
 }
 
 /** 配置表类型行中允许出现的数据类型关键字（用于定位类型行，反推列名行与数据起始行）。 */
@@ -514,24 +560,14 @@ program
             console.log('开始执行Excel转JSON转换...')
             console.log('当前工作目录:', process.cwd())
             console.log('配置路径:')
-            console.log('  frameworkI18nInputPath:', frameworkI18nInputPath)
-            console.log('  frameworkI18nOutputPath:', frameworkI18nOutputPath)
             console.log('  gameI18nInputPath:', gameI18nInputPath)
             console.log('  gameI18nOutputPath:', gameI18nOutputPath)
             console.log('  configInputPath:', configInputPath)
             console.log('  configOutputPath:', configOutputPath)
             
-            // 框架与游戏语言表分别输出，避免同名语言 JSON 互相覆盖。
+            // 批量扫描语言目录，按 Excel 文件名分目录输出。
             console.log('开始处理多语言表...')
-            const frameworkProduced = convertLanguageTable('框架多语言表', frameworkI18nInputPath, frameworkI18nOutputPath)
-            if (frameworkProduced && frameworkProduced.length > 0) {
-                cleanOutputDir(frameworkI18nOutputPath, frameworkProduced, '框架多语言')
-            }
-
-            const gameProduced = convertLanguageTable('游戏多语言表', gameI18nInputPath, gameI18nOutputPath)
-            if (gameProduced && gameProduced.length > 0) {
-                cleanOutputDir(gameI18nOutputPath, gameProduced, '游戏多语言')
-            }
+            convertLanguageDirectory(gameI18nInputPath, gameI18nOutputPath)
             console.log('多语言表处理完成')
 
             

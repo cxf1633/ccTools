@@ -8,7 +8,7 @@ Excel 转 JSON 工具，用于把项目内的多语言表和普通配置表导�
 
 - 工具目录：`tools/excel-to-json`
 - 使用说明：`tools/excel-to-json/使用说明.md`
-- 转表入口：`excel/转表.bat`（转表 + 把框架多语言自动输出到 `assets/framework/language/json`）
+- 转表入口：`excel/转表.bat`（转表 + 把框架多语言自动输出到 `assets/modules/language/json`）
 - 游戏多语言表目录：`excel/language`
 - 框架多语言表：`excel/language/FrameworkI18n.xlsx`，输出目录配置在 `excel/framework-i18n-output.txt`
 
